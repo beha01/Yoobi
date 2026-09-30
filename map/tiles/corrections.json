@@ -1,0 +1,22 @@
+{
+  "_": "Правки поверх OpenStreetMap: то, что знают сами жители и владелец карты, а в OSM ещё нет. Формат — в scripts/corrections.py. В note — откуда сведения и когда.",
+  "change": [
+    {
+      "osm": "node/5480014421",
+      "tags": {
+        "name": "Tajplov",
+        "name:ru": "Тадж Плов",
+        "amenity": "restaurant",
+        "cuisine": "plov",
+        "name:en": "Tajplov"
+      },
+      "note": "Сообщение пользователя 30.09.2026: у круга на ул. Шамси вместо кафе «Давра» теперь ресторан «Тач Плов» (Tajplov)",
+      "drop": [
+        "name:tg",
+        "old_name"
+      ]
+    }
+  ],
+  "add": [],
+  "remove": []
+}

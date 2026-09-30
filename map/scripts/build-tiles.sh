@@ -114,6 +114,12 @@ if ! python3 -c 'import osmium; osmium.FileProcessor' 2>/dev/null; then
   data/.venv/bin/pip install --quiet 'osmium>=4'
   PY=data/.venv/bin/python
 fi
+# Суточная выгрузка отстаёт от OpenStreetMap на часы: правки после неё докачиваются
+# с planet.openstreetmap.org до текущей минуты (scripts/update-osm.py, ~2–5 минут).
+# Без сети или с UPDATE_OSM=0 сборка идёт по суточной выгрузке.
+if [[ "${UPDATE_OSM:-1}" == 1 ]]; then
+  "$PY" scripts/update-osm.py "$PBF" || echo "Правки OSM после выгрузки не скачаны — сборка по суточной выгрузке" >&2
+fi
 # Организации Overture Maps: из мировой базы читаются только куски, покрывающие страну
 # (~50 МБ). Если сеть до S3 недоступна, сборка продолжается без них.
 OVERTURE_ARGS=()

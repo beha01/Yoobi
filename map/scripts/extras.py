@@ -51,6 +51,7 @@
 """
 import json
 import math
+import os
 import random
 import re
 import sys
@@ -59,6 +60,7 @@ from collections import defaultdict
 import osmium
 from osmium.osm.mutable import Node, Way
 
+import corrections
 from landmarks import Landmarks
 from places import StreetIndex, address_names, house_number, merge_overture, ru_street, tidy
 
@@ -1290,7 +1292,17 @@ def header_latitude(path):
     return (box.bottom_left.lat + box.top_right.lat) / 2 if box.valid() else 38.5
 
 
-def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path=None, buildings_path=None):
+CORRECTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tiles', 'corrections.json')
+
+
+def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path=None, buildings_path=None,
+         corrections_path=CORRECTIONS):
+    # Правки владельца карты (tiles/corrections.json) — до всех проходов: они попадут везде.
+    fixes = corrections.load(corrections_path) if corrections_path else None
+    if fixes:
+        fixed_src = os.path.join(os.path.dirname(os.path.abspath(dst)), 'corrected.osm.pbf')
+        print(f'правки владельца карты: {corrections.apply(src, fixed_src, fixes)} ({corrections_path})')
+        src = fixed_src
     set_projection(header_latitude(src))
     rnd = random.Random(7)
     landmarks = Landmarks(to_xy, to_lonlat)
@@ -1370,4 +1382,5 @@ if __name__ == '__main__':
     sys.setrecursionlimit(100000)
     opts = dict(a[2:].split('=', 1) for a in sys.argv[1:] if a.startswith('--') and '=' in a)
     main(*[a for a in sys.argv[1:] if not a.startswith('--')][:4], search_path=opts.get('search'),
-         overture_path=opts.get('overture'), buildings_path=opts.get('buildings'))
+         overture_path=opts.get('overture'), buildings_path=opts.get('buildings'),
+         corrections_path=opts.get('corrections', CORRECTIONS))
