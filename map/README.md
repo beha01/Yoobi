@@ -33,9 +33,16 @@ cd map
 npm run demo          # http://localhost:8080/demo/
 ```
 
-Демо — это полноэкранная карта без лишнего интерфейса. Параметры задаются в адресе:
-`?lang=tg`, `?category=food`, `?3d=0`, `?poi=0`, `?trees=0`, `?relief=0`, `?terrain=1.3`,
-`?tiles=pmtiles://…`, `?extra=pmtiles://…` (подъезды и деревья, см. ниже).
+Демо — это полноэкранная карта без лишнего интерфейса (`npm run serve` — то же самое).
+Параметры задаются в адресе: `?lang=tg`, `?category=food`, `?3d=0`, `?poi=0`, `?trees=0`,
+`?relief=0`, `?terrain=1.3`, `?tiles=pmtiles://…`, `?extra=pmtiles://…` (подъезды и деревья,
+см. ниже), `?mask=…` (точный контур страны).
+
+Карта на своих тайлах всей страны (после `./scripts/build-tiles.sh`):
+
+```
+http://localhost:8080/demo/?tiles=pmtiles://http://localhost:8080/data/tajikistan.pmtiles&extra=pmtiles://http://localhost:8080/data/tajikistan-extra.pmtiles&mask=http://localhost:8080/data/tajikistan-mask.geojson
+```
 
 ## Подключение в веб-проект
 
@@ -100,6 +107,7 @@ export function TajikMap() {
 | `buildings3d` | `true` | Объёмные здания с 14,5 зума |
 | `trees` | `true` | Объёмные деревья (с 15 зума, нужны `extraTiles`) и текстура лесов |
 | `locked` | `true` | «Заморозка» соседних стран; строка — адрес точного контура GeoJSON |
+| `clipped` | `null` | Тайлы из `scripts/build-tiles.sh`: подписей соседних стран в них нет, поэтому подписи Таджикистана рисуются поверх «заморозки» и не обрезаются у границы; `null` — да, если заданы `extraTiles` |
 | `poi` | `true` | Места со значками |
 | `category` | `null` | Показывать места только одной категории |
 
@@ -175,15 +183,20 @@ MapLibreMap(styleString: 'https://cdn.example.com/map/styles/yoobi-ru.json', ini
    ```bash
    ./scripts/build-tiles.sh        # → data/tajikistan.pmtiles, data/tajikistan-extra.pmtiles
    ```
-   Скрипт скачивает свежую выгрузку OSM с Geofabrik и собирает тайлы через
+   Скрипт скачивает свежую выгрузку OSM с Geofabrik (при каждом запуске — только если
+   она обновилась; если HTTPS до Geofabrik закрыт, та же выгрузка берётся по HTTP с
+   проверкой MD5; свой источник — `OSM_URL=…`) и собирает тайлы через
    [Planetiler](https://github.com/onthegomap/planetiler) 0.10.2 (версия закреплена).
    Получаются основные тайлы в схеме OpenMapTiles, дополнительные — объёмные
    деревья и подъезды (`scripts/extras.py` + `tiles/extra.yml`) и точный контур
    страны `data/tajikistan-mask.geojson` для «заморозки» соседей
-   (`createStyle({ locked: 'https://…/tajikistan-mask.geojson' })`). В подписи попадают только русский,
-   таджикский и английский, а мировые полигоны океана (~850 МБ) не скачиваются —
-   у Таджикистана нет моря. Пересобирайте раз в неделю или месяц, чтобы данные были
-   свежими.
+   (`createStyle({ locked: 'https://…/tajikistan-mask.geojson' })`). Основные тайлы
+   собираются из копии выгрузки без подписей соседних стран: названия, адреса и
+   места за границей убраны, а дороги, дома и реки остались под «заморозкой». Поэтому
+   подписи у границы (Исфара, Хорог, Истаравшан) не обрезаются. В подписи попадают только
+   русский, таджикский и английский, а мировые полигоны океана (~850 МБ) не скачиваются —
+   у Таджикистана нет моря. Вся страна: основные тайлы ~80 МБ, дополнительные ~50 МБ,
+   сборка ~7 минут. Пересобирайте раз в неделю или месяц, чтобы данные были свежими.
 2. **Шрифты:**
    ```bash
    ./scripts/download-fonts.sh     # → fonts/
@@ -205,7 +218,7 @@ MapLibreMap(styleString: 'https://cdn.example.com/map/styles/yoobi-ru.json', ini
    });
    ```
    Для мобильных те же адреса передаются в сборку:
-   `npm run build -- --base-url=… --tiles=pmtiles://… --extra-tiles=pmtiles://… --glyphs=…`.
+   `npm run build -- --base-url=… --tiles=pmtiles://… --extra-tiles=pmtiles://… --glyphs=… --mask=…`.
    Свежие версии MapLibre Native (Android, iOS) читают `pmtiles://` напрямую.
    Если ваша версия не умеет, раздавайте тот же файл как `{z}/{x}/{y}.pbf`
    через `pmtiles serve` ([go-pmtiles](https://github.com/protomaps/go-pmtiles))
@@ -249,10 +262,13 @@ location ~ ^/map/.*\.pmtiles$ {
   считает `scripts/extras.py` по контуру здания.
 - **Деревья** — объёмные: ствол и круглая крона из нескольких ярусов, дома правильно
   их заслоняют. Только там, где деревья есть в OSM: отдельные деревья и аллеи
-  (`natural=tree`, `natural=tree_row`), леса и рощи (`landuse=forest`, `natural=wood`)
-  и сады (`landuse=orchard`, ровными рядами). Трава, сады и виноградники — своими
-  цветами по разметке OSM. Декоративные посадки вдоль улиц и в парках можно включить
-  флагом `--decor` у `scripts/extras.py` (в тайлах они помечены `decor=yes`).
+  (`natural=tree`, `natural=tree_row`) — все, леса и рощи (`landuse=forest`, `natural=wood`)
+  и сады (`landuse=orchard`, ровными рядами) — у городов, посёлков и сёл, не в домах,
+  не на дорогах и не в воде. Чтобы тайлы оставались лёгкими, на тайл 15-го зума
+  (~1 км²) приходится не больше 1000 деревьев: большие леса и сады засаживаются реже,
+  но равномерно; дальние горные леса — только текстурой. Трава, сады и виноградники —
+  своими цветами по разметке OSM. Декоративные посадки вдоль улиц и в парках можно
+  включить флагом `--decor` у `scripts/extras.py` (в тайлах они помечены `decor=yes`).
 - **Здания** — это реальные контуры и этажность из OSM, поэтому у каждого дома своя
   форма. Если в OSM указан цвет фасада (`building:colour`), он используется.
 
@@ -265,6 +281,8 @@ location ~ ^/map/.*\.pmtiles$ {
   лицензия ODbL. Подпись «© OpenStreetMap» обязательна; `mapOptions()` оставляет
   её в углу карты в компактном виде.
 - Тайлы: [OpenFreeMap](https://openfreemap.org), схема [OpenMapTiles](https://openmaptiles.org).
+- Встроенный контур страны для «заморозки» (`src/borders.js`, `scripts/make-borders.mjs`) —
+  из OpenStreetMap (© участники OpenStreetMap, ODbL), упрощён до ~300 м.
 - Рельеф: [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (AWS Open Data).
 - Шрифт Noto Sans — лицензия OFL. Значки нарисованы по мотивам Material Icons (Apache 2.0).
 - Сам стиль — MIT.
@@ -299,7 +317,8 @@ map/
   scripts/            сборка, проверка, демо-сервер, тайлы, шрифты
   src/locked.js       сообщение при нажатии на соседнюю страну
   src/borders.js      контур страны и точки соседей (scripts/make-borders.mjs)
-  scripts/extras.py   объёмные деревья, подъезды со стороной входа, маска страны
+  scripts/extras.py   объёмные деревья, подъезды со стороной входа, маска страны,
+                      выгрузка без подписей соседних стран
   tiles/extra.yml     схема дополнительных тайлов для Planetiler
   demo/index.html     полноэкранная демо-карта
 ```

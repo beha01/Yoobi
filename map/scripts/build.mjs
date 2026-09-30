@@ -6,9 +6,10 @@
 //                    --tiles=pmtiles://https://cdn.example.com/map/tajikistan.pmtiles \
 //                    --glyphs=https://cdn.example.com/map/fonts/{fontstack}/{range}.pbf
 //
-//   npm run build -- --base-url=… --extra-tiles=pmtiles://https://cdn.example.com/map/tajikistan-extra.pmtiles
+//   npm run build -- --base-url=… --extra-tiles=pmtiles://https://cdn.example.com/map/tajikistan-extra.pmtiles \
+//                    --mask=https://cdn.example.com/map/tajikistan-mask.geojson
 //
-// Флаги: --no-hillshade, --no-3d, --no-poi, --no-trees, --no-dem, --terrain=1.3
+// Флаги: --no-hillshade, --no-3d, --no-poi, --no-trees, --no-dem, --no-locked, --terrain=1.3
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -61,6 +62,7 @@ const options = {
   poi: args.poi !== false,
   trees: args.trees !== false,
   terrain: args.terrain ? Number(args.terrain) : false,
+  locked: args.locked === false ? false : args.mask || true,
 };
 await mkdir(join(root, 'styles'), { recursive: true });
 for (const lang of LANGUAGES) {

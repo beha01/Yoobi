@@ -59,11 +59,24 @@ const variants = [
   { tiles: ['https://example.com/{z}/{x}/{y}.pbf'], dem: null },
   { extraTiles: 'pmtiles://https://example.com/extra.pmtiles' },
   { extraTiles: 'https://example.com/extra.json', trees: false, category: 'gov' },
+  { extraTiles: 'pmtiles://https://example.com/extra.pmtiles', clipped: false, locked: 'https://example.com/mask.geojson' },
+  { clipped: true },
+  { locked: false },
 ];
 for (const lang of LANGUAGES) {
   for (const v of variants) checkStyle(buildStyle({ sprite, lang, ...v }), `${lang} ${JSON.stringify(v)}`);
 }
 for (const c of [...CATEGORIES, AIRPORT]) checkStyle(buildStyle({ sprite, category: c.id }), `категория ${c.id}`);
+
+// «Заморозка» соседей: с тайлами из build-tiles.sh (без подписей соседних стран) — под
+// подписями, чтобы они не обрезались у границы; с чужими тайлами — поверх подписей.
+for (const [opts, onTop] of [[{}, true], [{ extraTiles: 'pmtiles://x' }, false], [{ clipped: true }, false],
+  [{ extraTiles: 'pmtiles://x', clipped: false }, true]]) {
+  const ids = buildStyle({ sprite, ...opts }).layers.map((l) => l.id);
+  const top = ids.indexOf('outside-frost') > ids.indexOf('place-city');
+  if (top !== onTop) fail(`«заморозка» ${onTop ? 'должна закрывать' : 'не должна закрывать'} подписи: ${JSON.stringify(opts)}`);
+  else ok(`«заморозка» ${onTop ? 'поверх подписей' : 'под подписями'}: ${JSON.stringify(opts)}`);
+}
 
 // Собранные файлы в styles/.
 for (const file of (await readdir(join(root, 'styles'))).filter((f) => f.endsWith('.json'))) {

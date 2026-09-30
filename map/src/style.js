@@ -13,6 +13,7 @@ import { OUTSIDE_MASK, NEIGHBORS } from './borders.js';
 import {
   AIRPORT, HIDDEN_CLASSES, LANDMARK_CATEGORIES, MINOR_SUBCLASSES, categoryExpression, imageExpression,
 } from './categories.js';
+import { CITIES, REGIONS } from './tajikistan.js';
 
 export const LANGUAGES = ['ru', 'tg', 'en'];
 
@@ -35,6 +36,10 @@ export const DEFAULTS = {
   // «Заморозка» соседних стран: true — встроенный контур, строка — адрес GeoJSON
   // (точный контур из scripts/build-tiles.sh), false — выключить.
   locked: true,
+  // Тайлы из scripts/build-tiles.sh: подписей соседних стран в них нет, поэтому подписи
+  // Таджикистана рисуются поверх «заморозки» и не обрезаются у границы. null — да,
+  // если заданы extraTiles (их даёт тот же скрипт).
+  clipped: null,
   poi: true,
   category: null, // id категории из CATEGORIES, чтобы показывать только её
 };
@@ -118,6 +123,19 @@ function landcoverColor(park) {
 }
 const EXTRA = 'extra';
 
+// Обзор страны (до OVERVIEW_TO зума) подписывается крупными городами из CITIES: в OSM
+// ранги неровные — Бохтар появляется в тайлах только с 7 зума, а некоторые
+// райцентры (у них в OSM население всего района) — раньше областных городов.
+const OVERVIEW_TO = 7;
+const OVERVIEW_CITIES = {
+  type: 'FeatureCollection',
+  features: CITIES.map((c, rank) => ({
+    type: 'Feature',
+    properties: { name_ru: c.name, name_tg: c.name_tg, name_en: c.name_en, capital: Boolean(c.capital), rank },
+    geometry: { type: 'Point', coordinates: c.center },
+  })),
+};
+
 // ——— Выражения ———
 
 // Название объекта на выбранном языке с запасными вариантами.
@@ -167,6 +185,7 @@ function peakLabelExpression(lang) {
 const TEXT_BUILDERS = {
   name: nameExpression, street: streetNameExpression, river: riverNameExpression, peak: peakLabelExpression,
   neighbor: (lang) => ['get', `name_${lang}`],
+  label: (lang) => ['get', `name_${lang}`],
 };
 
 // text-field для слоя с пометкой metadata['yoobi:text'] на нужном языке.
@@ -198,7 +217,9 @@ export function poiFilter(kind, category = null) {
   const kinds = {
     main: ['all', ['!', minor], ['!', landmark]],
     landmark: ['all', ['!', minor], landmark],
-    icon: ['!', minor],
+    // Значки без подписей: в центре города мест сотни, поэтому показываются только
+    // самые важные в каждой клетке сетки тайла (rank из схемы OpenMapTiles).
+    icon: category ? ['!', minor] : ['all', ['!', minor], ['<=', ['coalesce', ['get', 'rank'], 99], 2]],
     minor,
   };
   const filter = ['all', hasName,
@@ -231,6 +252,11 @@ const ROADS = [
 ];
 const SIDEWALK = { 15: 1.5, 16: 3, 17: 5, 18: 8 }; // ширина тротуара с каждой стороны
 const NEAR = [15, 16, 17, 18];
+// Вблизи дороги меняют вид: белая дорога с бежевой кромкой → серый асфальт с белым
+// бордюром и тротуаром. Переход короткий, чтобы на промежуточных зумах дороги не
+// выглядели блёклыми.
+const NEAR_FROM = 15.2;
+const NEAR_TO = 15.9;
 const widthAt = (road, z) => {
   const zs = Object.keys(road.width).map(Number);
   if (road.width[z] !== undefined) return road.width[z];
@@ -266,13 +292,13 @@ function sidewalkLayers() {
     type: 'line',
     source: SOURCE,
     'source-layer': 'transportation',
-    minzoom: 14.5,
+    minzoom: NEAR_FROM,
     filter: roadFilter(r.classes),
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
       'line-color': COLORS.sidewalk,
       'line-width': zoomExp(...NEAR.flatMap((z) => [z, widthAt(r, z) + 2 + SIDEWALK[z] * 2])),
-      'line-opacity': zoomLinear(14.5, 0, 15.5, 1),
+      'line-opacity': zoomLinear(NEAR_FROM, 0, NEAR_TO, 1),
     },
   }));
 }
@@ -287,7 +313,7 @@ function roadLayers() {
     filter: roadFilter(r.classes),
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': zoomLinear(14.5, COLORS[r.casing], 15.8, COLORS.curb),
+      'line-color': zoomLinear(NEAR_FROM, COLORS[r.casing], NEAR_TO, COLORS.curb),
       'line-width': table(r.width, (w, z) => w + (z >= 12 ? 2 : 1)),
     },
   }));
@@ -300,7 +326,7 @@ function roadLayers() {
     filter: roadFilter(r.classes),
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': zoomLinear(14.5, COLORS[r.low], 15.8, COLORS[r.near]),
+      'line-color': zoomLinear(NEAR_FROM, COLORS[r.low], NEAR_TO, COLORS[r.near]),
       'line-width': table(r.width),
     },
   }));
@@ -321,6 +347,7 @@ export function buildStyle(options = {}) {
   const name = nameExpression(o.lang);
   const text = (kind) => ({ 'yoobi:text': kind });
   const extra = Boolean(o.extraTiles);
+  const clipped = o.clipped ?? extra;
 
   const vector = (tiles) => (Array.isArray(tiles)
     ? { type: 'vector', tiles, maxzoom: 14,
@@ -340,6 +367,8 @@ export function buildStyle(options = {}) {
     sources.outside = { type: 'geojson', data: typeof o.locked === 'string' ? o.locked : OUTSIDE_MASK, tolerance: 0.6 };
     sources.neighbors = { type: 'geojson', data: NEIGHBORS };
   }
+  sources.regions = { type: 'geojson', data: REGIONS };
+  sources.cities = { type: 'geojson', data: OVERVIEW_CITIES };
   const hillshade = o.dem && o.hillshade;
   if (hillshade) sources.hillshade = demSource();
   if (o.dem && o.terrain) sources.terrain = demSource();
@@ -406,10 +435,11 @@ export function buildStyle(options = {}) {
       id: 'hillshade',
       type: 'hillshade',
       source: 'hillshade',
-      maxzoom: 16,
+      // В городе отмывка только мешает: к 15 зуму её уже нет.
+      maxzoom: 15,
       metadata: { 'yoobi:group': 'hillshade' },
       paint: {
-        'hillshade-exaggeration': zoomLinear(5, 0.5, 9, 0.38, 13, 0.16, 16, 0),
+        'hillshade-exaggeration': zoomLinear(5, 0.5, 9, 0.38, 12, 0.2, 15, 0),
         'hillshade-shadow-color': '#9C8F7A',
         'hillshade-highlight-color': '#FFFFFF',
         'hillshade-accent-color': '#C3B9A6',
@@ -605,7 +635,8 @@ export function buildStyle(options = {}) {
       filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1], ['==', ['get', 'disputed'], 1]],
       paint: { 'line-color': C.boundary, 'line-width': zoomLinear(3, 1, 10, 2.4), 'line-dasharray': [2, 2] },
     },
-    {
+    // С «заморозкой» границу страны рисует кромка маски (outside-border).
+    ...(o.locked ? [] : [{
       id: 'boundary-country',
       type: 'line',
       source: SOURCE,
@@ -613,42 +644,9 @@ export function buildStyle(options = {}) {
       filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1], ['!=', ['get', 'disputed'], 1]],
       layout: { 'line-join': 'round' },
       paint: { 'line-color': C.boundary, 'line-width': zoomLinear(3, 1, 10, 2.6) },
-    },
+    }]),
 
     // ——— Подписи ———
-    {
-      id: 'waterway-label',
-      type: 'symbol',
-      source: SOURCE,
-      'source-layer': 'waterway',
-      minzoom: 11,
-      filter: ['all', hasName, ['==', ['get', 'class'], 'river']],
-      metadata: text('river'),
-      layout: {
-        'symbol-placement': 'line',
-        'symbol-spacing': 420,
-        'text-field': riverNameExpression(o.lang),
-        'text-font': FONT.italic,
-        'text-size': zoomLinear(11, 11, 14, 13, 17, 15),
-        'text-letter-spacing': 0.06,
-      },
-      paint: { 'text-color': C.waterLabel, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 },
-    },
-    {
-      id: 'water-label',
-      type: 'symbol',
-      source: SOURCE,
-      'source-layer': 'water_name',
-      filter: hasName,
-      metadata: text('name'),
-      layout: {
-        'text-field': name,
-        'text-font': FONT.italic,
-        'text-size': zoomLinear(8, 11, 14, 14),
-        'text-max-width': 8,
-      },
-      paint: { 'text-color': C.waterLabel, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 },
-    },
     {
       id: 'road-label',
       type: 'symbol',
@@ -736,6 +734,42 @@ export function buildStyle(options = {}) {
         paint: { 'text-color': '#3E362D' },
       },
     ] : []),
+    // Подписи ниже — поверх «заморозки», если в тайлах нет подписей соседних стран:
+    // тогда подписи у границы не обрезаются. Иначе «заморозка» закрывает и их.
+    ...(o.locked && clipped ? frostLayers() : []),
+    {
+      id: 'waterway-label',
+      type: 'symbol',
+      source: SOURCE,
+      'source-layer': 'waterway',
+      minzoom: 11,
+      filter: ['all', hasName, ['==', ['get', 'class'], 'river']],
+      metadata: text('river'),
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 420,
+        'text-field': riverNameExpression(o.lang),
+        'text-font': FONT.italic,
+        'text-size': zoomLinear(11, 11, 14, 13, 17, 15),
+        'text-letter-spacing': 0.06,
+      },
+      paint: { 'text-color': C.waterLabel, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 },
+    },
+    {
+      id: 'water-label',
+      type: 'symbol',
+      source: SOURCE,
+      'source-layer': 'water_name',
+      filter: hasName,
+      metadata: text('name'),
+      layout: {
+        'text-field': name,
+        'text-font': FONT.italic,
+        'text-size': zoomLinear(8, 11, 14, 14),
+        'text-max-width': 8,
+      },
+      paint: { 'text-color': C.waterLabel, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 },
+    },
     {
       id: 'mountain-peak',
       type: 'symbol',
@@ -793,20 +827,16 @@ export function buildStyle(options = {}) {
       },
       paint: { 'text-color': C.label, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 },
     },
-    ...placeLayers('town', 6, 15, 'dot-town', zoomLinear(6, 10, 10, 13, 12, 15), o),
-    ...placeLayers('city', 4, 14, ['case', ['==', ['get', 'capital'], 2], 'dot-capital', 'dot-city'],
-      zoomLinear(4, ['case', ['==', ['get', 'capital'], 2], 13, 11], 10, ['case', ['==', ['get', 'capital'], 2], 22, 17]), o),
+    // Области — свои точки (в OSM у Согдийской области две), ниже городов по важности.
     {
-      id: 'place-state',
+      id: 'place-region',
       type: 'symbol',
-      source: SOURCE,
-      'source-layer': 'place',
+      source: 'regions',
       minzoom: 5,
       maxzoom: 8.5,
-      filter: ['in', ['get', 'class'], ['literal', ['state', 'province']]],
-      metadata: text('name'),
+      metadata: text('label'),
       layout: {
-        'text-field': name,
+        'text-field': ['get', `name_${o.lang}`],
         'text-font': FONT.regular,
         'text-size': zoomLinear(5, 10.5, 8, 13),
         'text-transform': 'uppercase',
@@ -815,13 +845,40 @@ export function buildStyle(options = {}) {
       },
       paint: { 'text-color': C.region, 'text-halo-color': 'rgba(255,255,255,0.8)', 'text-halo-width': 1.4 },
     },
+    ...placeLayers('town', OVERVIEW_TO, 15, 'dot-town', zoomLinear(6, 10, 10, 13, 12, 15), o),
+    ...placeLayers('city', OVERVIEW_TO, 14, ['case', ['==', ['get', 'capital'], 2], 'dot-capital', 'dot-city'],
+      zoomLinear(4, ['case', ['==', ['get', 'capital'], 2], 13, 11], 10, ['case', ['==', ['get', 'capital'], 2], 22, 17]), o),
+    ...(o.locked && !clipped ? frostLayers() : []),
+    // Крупные города на обзоре и название страны — только таджикские, поэтому всегда
+    // поверх «заморозки»: подписи у границы (Истаравшан, Исфара) не обрезаются.
+    {
+      id: 'place-overview',
+      type: 'symbol',
+      source: 'cities',
+      minzoom: 4,
+      maxzoom: OVERVIEW_TO,
+      metadata: text('label'),
+      layout: {
+        'icon-image': ['case', ['get', 'capital'], 'dot-capital', 'dot-city'],
+        'text-field': ['get', `name_${o.lang}`],
+        'text-font': FONT.bold,
+        'text-size': zoomLinear(4, ['case', ['get', 'capital'], 13, 11], 10, ['case', ['get', 'capital'], 22, 17]),
+        'text-max-width': 8,
+        'symbol-sort-key': ['get', 'rank'],
+        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+        'text-radial-offset': 0.55,
+        'text-justify': 'auto',
+      },
+      paint: { 'text-color': C.label, 'text-halo-color': 'rgba(255,255,255,0.95)', 'text-halo-width': 1.8 },
+    },
     {
       id: 'place-country',
       type: 'symbol',
       source: SOURCE,
       'source-layer': 'place',
       maxzoom: 8,
-      filter: ['==', ['get', 'class'], 'country'],
+      // С «заморозкой» подписывается только Таджикистан: соседей подписывают замки.
+      filter: ['all', ['==', ['get', 'class'], 'country'], ...(o.locked ? [['==', ['get', 'iso_a2'], 'TJ']] : [])],
       metadata: text('name'),
       layout: {
         'text-field': name,
@@ -833,7 +890,7 @@ export function buildStyle(options = {}) {
       },
       paint: { 'text-color': C.country, 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.6 },
     },
-    ...(o.locked ? lockedLayers(o) : []),
+    ...(o.locked ? [neighborLockLayer(o)] : []),
   ];
 
   return {
@@ -848,9 +905,9 @@ export function buildStyle(options = {}) {
   };
 }
 
-// Соседние страны: матовая «заморозка» поверх всего, светящаяся кромка вдоль
-// границы и замок с названием страны. Нажатие обрабатывает enableLockedCountries().
-function lockedLayers(o) {
+// Соседние страны: матовая «заморозка», светящаяся кромка вдоль границы и замок с
+// названием страны. Нажатие обрабатывает enableLockedCountries().
+function frostLayers() {
   return [
     {
       id: 'outside-frost',
@@ -880,28 +937,31 @@ function lockedLayers(o) {
       layout: { 'line-join': 'round' },
       paint: { 'line-color': '#8E7BAE', 'line-width': zoomLinear(4, 1.4, 10, 2.6), 'line-opacity': 0.85 },
     },
-    {
-      id: 'neighbor-lock',
-      type: 'symbol',
-      source: 'neighbors',
-      maxzoom: 11,
-      metadata: { 'yoobi:group': 'locked', 'yoobi:text': 'neighbor' },
-      layout: {
-        'icon-image': 'lock',
-        'icon-size': zoomLinear(4, 0.8, 8, 1.1),
-        'text-field': ['get', `name_${o.lang}`],
-        'text-font': FONT.bold,
-        'text-size': zoomLinear(4, 11, 8, 14),
-        'text-anchor': 'top',
-        'text-offset': [0, 1.5],
-        'text-transform': 'uppercase',
-        'text-letter-spacing': 0.1,
-        'icon-allow-overlap': true,
-        'text-allow-overlap': true,
-      },
-      paint: { 'text-color': '#8A8378', 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.5 },
-    },
   ];
+}
+
+function neighborLockLayer(o) {
+  return {
+    id: 'neighbor-lock',
+    type: 'symbol',
+    source: 'neighbors',
+    maxzoom: 11,
+    metadata: { 'yoobi:group': 'locked', 'yoobi:text': 'neighbor' },
+    layout: {
+      'icon-image': 'lock',
+      'icon-size': zoomLinear(4, 0.8, 8, 1.1),
+      'text-field': ['get', `name_${o.lang}`],
+      'text-font': FONT.bold,
+      'text-size': zoomLinear(4, 11, 8, 14),
+      'text-anchor': 'top',
+      'text-offset': [0, 1.5],
+      'text-transform': 'uppercase',
+      'text-letter-spacing': 0.1,
+      'icon-allow-overlap': true,
+      'text-allow-overlap': true,
+    },
+    paint: { 'text-color': '#8A8378', 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.5 },
+  };
 }
 
 // Города и посёлки: издалека — точка и подпись сбоку, вблизи — подпись по центру.

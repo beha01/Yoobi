@@ -11,6 +11,7 @@
 #
 #   ./scripts/build-tiles.sh
 #   PLANETILER_MEMORY=6g ./scripts/build-tiles.sh
+#   OSM_URL=https://example.com/tajikistan.osm.pbf ./scripts/build-tiles.sh   # свой источник выгрузки
 #
 # Готовые файлы кладутся на статический хостинг или CDN с поддержкой HTTP Range
 # (nginx, S3, Cloudflare R2) и подключаются так:
@@ -58,29 +59,73 @@ if [[ "${OCEAN:-0}" != 1 ]]; then
   OCEAN_ARGS=(--water_polygons_path="$TILES/no-ocean.zip")
 fi
 
-# 1. Основные тайлы. В подписи попадают только русский, таджикский и английский —
-#    так файл заметно меньше.
+# 1. Свежая выгрузка OSM. Скрипт качает её сам, а не через planetiler --download:
+#    так при каждой пересборке данные обновляются (curl -z скачивает файл, только
+#    если на сервере есть версия новее). Если HTTPS до Geofabrik закрыт прокси или
+#    фильтром, та же выгрузка берётся по HTTP с проверкой контрольной суммы MD5.
+#    Для областей не из Азии задайте GEOFABRIK_PATH (например, europe/monaco) или OSM_URL.
+PBF="data/sources/$AREA.osm.pbf"
+GEOFABRIK_PATH="${GEOFABRIK_PATH:-asia/$AREA}"
+mkdir -p data/sources
+
+md5_of() { { md5sum "$1" 2>/dev/null || md5 -r "$1"; } | cut -d' ' -f1; }
+
+fetch_osm() {
+  local url=$1 tmp="$PBF.tmp" since=()
+  [[ -s "$PBF" ]] && since=(-z "$PBF")
+  rm -f "$tmp"
+  curl -fL --retry 3 --retry-all-errors --connect-timeout 20 -R ${since[@]+"${since[@]}"} -o "$tmp" "$url" || { rm -f "$tmp"; return 1; }
+  if [[ ! -s "$tmp" ]]; then
+    rm -f "$tmp"
+    echo "Выгрузка OSM не изменилась с прошлой сборки: $PBF"
+    return 0
+  fi
+  if [[ $url == http://* ]]; then
+    local want
+    want=$(curl -fsSL --retry 3 --retry-all-errors "$url.md5" | cut -d' ' -f1) || want=
+    if [[ -z $want || $(md5_of "$tmp") != "$want" ]]; then
+      rm -f "$tmp"
+      echo "Контрольная сумма выгрузки не совпала: $url" >&2
+      return 1
+    fi
+  fi
+  mv "$tmp" "$PBF"
+}
+
+if [[ -n "${OSM_URL:-}" ]]; then
+  fetch_osm "$OSM_URL"
+elif ! fetch_osm "https://download.geofabrik.de/$GEOFABRIK_PATH-latest.osm.pbf"; then
+  echo "HTTPS до Geofabrik недоступен, пробую HTTP с проверкой MD5" >&2
+  fetch_osm "http://download.geofabrik.de/$GEOFABRIK_PATH-latest.osm.pbf"
+fi
+
+# 2. Объёмные деревья, подъезды со стороной входа, точная маска страны и копия
+#    выгрузки без подписей соседних стран (scripts/extras.py, нужен pyosmium 4+;
+#    ставится в data/.venv сам).
+PY=python3
+if ! python3 -c 'import osmium; osmium.FileProcessor' 2>/dev/null; then
+  [[ -d data/.venv ]] || python3 -m venv data/.venv
+  data/.venv/bin/pip install --quiet 'osmium>=4'
+  PY=data/.venv/bin/python
+fi
+rm -f data/extras.osm.pbf
+"$PY" scripts/extras.py "$PBF" data/extras.osm.pbf "data/$AREA-mask.geojson" "data/$AREA-clipped.osm.pbf"
+
+# 3. Основные тайлы — из копии без подписей соседей, поэтому стиль рисует подписи
+#    Таджикистана поверх «заморозки». В подписи попадают только русский, таджикский
+#    и английский — так файл заметно меньше. Planetiler докачивает только
+#    вспомогательные данные (Natural Earth, осевые линии озёр).
 planetiler \
   --download \
   --area="$AREA" \
+  --osm_path="$DATA/$AREA-clipped.osm.pbf" \
   --download_dir="$DATA/sources" \
   ${OCEAN_ARGS[@]+"${OCEAN_ARGS[@]}"} \
   --languages=ru,tg,en \
   --output="$DATA/$AREA.pmtiles" \
   --force
 
-# 2. Объёмные деревья, подъезды со стороной входа и точная маска страны — из той же
-#    выгрузки (scripts/extras.py, нужен pyosmium; ставится в data/.venv сам).
-PY=python3
-if ! python3 -c 'import osmium' 2>/dev/null; then
-  [[ -d data/.venv ]] || python3 -m venv data/.venv
-  data/.venv/bin/pip install --quiet osmium
-  PY=data/.venv/bin/python
-fi
-rm -f data/extras.osm.pbf
-"$PY" scripts/extras.py "data/sources/$AREA.osm.pbf" data/extras.osm.pbf "data/$AREA-mask.geojson"
-
-# 3. Нарезка дополнительных тайлов (до 15 зума — кроны и подъезды точнее).
+# 4. Нарезка дополнительных тайлов (до 15 зума — кроны и подъезды точнее).
 planetiler generate-custom \
   --schema="$TILES/extra.yml" \
   --osm_path="$DATA/extras.osm.pbf" \

@@ -20,7 +20,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node scripts/validate.mjs",
-    "demo": "node scripts/serve.mjs"
+    "demo": "node scripts/serve.mjs",
+    "serve": "node scripts/serve.mjs"
   },
   "peerDependencies": {
     "maplibre-gl": ">=4.0.0"

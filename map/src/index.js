@@ -18,7 +18,7 @@ export {
 export {
   CATEGORIES, CATEGORY_BY_ID, OTHER, AIRPORT, SUBCLASS_RU, LANDMARK_CATEGORIES, categoryFor, iconFor,
 } from './categories.js';
-export { TAJIKISTAN_BOUNDS, DUSHANBE_VIEW, COUNTRY_VIEW, CITIES } from './tajikistan.js';
+export { TAJIKISTAN_BOUNDS, DUSHANBE_VIEW, COUNTRY_VIEW, CITIES, REGIONS } from './tajikistan.js';
 export { enableLockedCountries } from './locked.js';
 export { OUTSIDE_MASK, NEIGHBORS } from './borders.js';
 
@@ -30,7 +30,7 @@ export function defaultSpriteUrl() {
 /**
  * Готовый объект стиля для `new maplibregl.Map({ style })`.
  * Опции — см. DEFAULTS в style.js: lang, tiles, extraTiles, glyphs, sprite, dem,
- * hillshade, terrain, buildings3d, trees, locked, poi, category.
+ * hillshade, terrain, buildings3d, trees, locked, clipped, poi, category.
  */
 export function createStyle(options = {}) {
   return buildStyle({ sprite: defaultSpriteUrl(), ...options });
