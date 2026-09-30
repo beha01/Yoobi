@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Карта Таджикистана — Yoobi Map</title>
+  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.css">
+  <style>
+    html, body, #map { margin: 0; height: 100%; }
+    body { background: #F3F0EA; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    .maplibregl-popup-content { border-radius: 12px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.15); }
+    .poi-name { font-weight: 600; font-size: 14px; }
+    .poi-type { color: #777; font-size: 13px; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script type="module">
+    // Параметры адреса: ?lang=ru|tg|en  ?category=food  ?tiles=pmtiles://https://…/tajikistan.pmtiles
+    //                   ?extra=pmtiles://https://…/tajikistan-extra.pmtiles  ?3d=0  ?poi=0  ?trees=0
+    //                   ?relief=0  ?terrain=1.3
+    import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs';
+    import { createStyle, mapOptions, POI_LAYERS, describeFeature, SUBCLASS_RU, enableLockedCountries } from '../src/index.js';
+
+    const q = new URLSearchParams(location.search);
+    const lang = q.get('lang') || 'ru';
+    const tiles = q.get('tiles') || undefined;
+    const extraTiles = q.get('extra') || undefined;
+
+    if ([tiles, extraTiles].some((t) => t?.startsWith('pmtiles://'))) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.append(s);
+      });
+      maplibregl.addProtocol('pmtiles', new window.pmtiles.Protocol({ metadata: true }).tile);
+    }
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: createStyle({
+        lang,
+        tiles,
+        extraTiles,
+        category: q.get('category'),
+        trees: q.get('trees') !== '0',
+        buildings3d: q.get('3d') !== '0',
+        poi: q.get('poi') !== '0',
+        hillshade: q.get('relief') !== '0',
+        terrain: q.get('terrain') ? Number(q.get('terrain')) : false,
+      }),
+      ...mapOptions({ hash: true }),
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+    map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), 'top-right');
+    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+
+    // Название и тип места по клику.
+    const popup = new maplibregl.Popup({ closeButton: false, offset: 14, maxWidth: '260px' });
+    map.on('click', POI_LAYERS, (e) => {
+      const place = describeFeature(e.features[0], lang);
+      const type = SUBCLASS_RU[place.subclass] || SUBCLASS_RU[place.class] || place.category.label;
+      const box = document.createElement('div');
+      box.innerHTML = '<div class="poi-name"></div><div class="poi-type"></div>';
+      box.firstChild.textContent = place.name;
+      box.lastChild.textContent = type;
+      popup.setLngLat(place.coordinates || e.lngLat).setDOMContent(box).addTo(map);
+    });
+    map.on('mouseenter', POI_LAYERS, () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', POI_LAYERS, () => { map.getCanvas().style.cursor = ''; });
+
+    // Соседние страны: замок, пульс и сообщение «пока недоступна».
+    map.once('load', () => enableLockedCountries(map, { lang }));
+
+    window.map = map;
+  </script>
+</body>
+</html>

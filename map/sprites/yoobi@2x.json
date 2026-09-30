@@ -1,0 +1,883 @@
+{
+ "mark-culture-star": {
+  "x": 0,
+  "y": 0,
+  "width": 128,
+  "height": 128,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    12,
+    32
+   ],
+   [
+    96,
+    116
+   ]
+  ],
+  "stretchY": [
+   [
+    92,
+    100
+   ]
+  ],
+  "content": [
+   20,
+   80,
+   108,
+   112
+  ]
+ },
+ "mark-culture-theater": {
+  "x": 136,
+  "y": 0,
+  "width": 128,
+  "height": 128,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    12,
+    32
+   ],
+   [
+    96,
+    116
+   ]
+  ],
+  "stretchY": [
+   [
+    92,
+    100
+   ]
+  ],
+  "content": [
+   20,
+   80,
+   108,
+   112
+  ]
+ },
+ "mark-edu-book": {
+  "x": 272,
+  "y": 0,
+  "width": 128,
+  "height": 128,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    12,
+    32
+   ],
+   [
+    96,
+    116
+   ]
+  ],
+  "stretchY": [
+   [
+    92,
+    100
+   ]
+  ],
+  "content": [
+   20,
+   80,
+   108,
+   112
+  ]
+ },
+ "mark-edu-school": {
+  "x": 408,
+  "y": 0,
+  "width": 128,
+  "height": 128,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    12,
+    32
+   ],
+   [
+    96,
+    116
+   ]
+  ],
+  "stretchY": [
+   [
+    92,
+    100
+   ]
+  ],
+  "content": [
+   20,
+   80,
+   108,
+   112
+  ]
+ },
+ "mark-gov-landmark": {
+  "x": 544,
+  "y": 0,
+  "width": 128,
+  "height": 128,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    12,
+    32
+   ],
+   [
+    96,
+    116
+   ]
+  ],
+  "stretchY": [
+   [
+    92,
+    100
+   ]
+  ],
+  "content": [
+   20,
+   80,
+   108,
+   112
+  ]
+ },
+ "mark-worship-mosque": {
+  "x": 680,
+  "y": 0,
+  "width": 128,
+  "height": 128,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    12,
+    32
+   ],
+   [
+    96,
+    116
+   ]
+  ],
+  "stretchY": [
+   [
+    92,
+    100
+   ]
+  ],
+  "content": [
+   20,
+   80,
+   108,
+   112
+  ]
+ },
+ "pattern-wood": {
+  "x": 816,
+  "y": 0,
+  "width": 128,
+  "height": 128,
+  "pixelRatio": 2
+ },
+ "lock": {
+  "x": 0,
+  "y": 136,
+  "width": 80,
+  "height": 80,
+  "pixelRatio": 2
+ },
+ "pill-airport-plane": {
+  "x": 88,
+  "y": 136,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-bank-bank": {
+  "x": 232,
+  "y": 136,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-culture-star": {
+  "x": 376,
+  "y": 136,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-culture-theater": {
+  "x": 520,
+  "y": 136,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-edu-book": {
+  "x": 664,
+  "y": 136,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-edu-school": {
+  "x": 808,
+  "y": 136,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-food-cafe": {
+  "x": 0,
+  "y": 224,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-food-restaurant": {
+  "x": 144,
+  "y": 224,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-fuel-fuel": {
+  "x": 288,
+  "y": 224,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-gov-landmark": {
+  "x": 432,
+  "y": 224,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-health-hospital": {
+  "x": 576,
+  "y": 224,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-hotel-bed": {
+  "x": 720,
+  "y": 224,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-mall-bag": {
+  "x": 864,
+  "y": 224,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-other-dot": {
+  "x": 0,
+  "y": 300,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-pharmacy-plus": {
+  "x": 144,
+  "y": 300,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-shop-cart": {
+  "x": 288,
+  "y": 300,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-transport-bus": {
+  "x": 432,
+  "y": 300,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-transport-train": {
+  "x": 576,
+  "y": 300,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "pill-worship-mosque": {
+  "x": 720,
+  "y": 300,
+  "width": 136,
+  "height": 68,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    80,
+    108
+   ]
+  ],
+  "stretchY": [
+   [
+    32,
+    36
+   ]
+  ],
+  "content": [
+   74,
+   16,
+   112,
+   52
+  ]
+ },
+ "label-park": {
+  "x": 864,
+  "y": 300,
+  "width": 80,
+  "height": 60,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    24,
+    56
+   ]
+  ],
+  "stretchY": [
+   [
+    26,
+    34
+   ]
+  ],
+  "content": [
+   20,
+   14,
+   60,
+   46
+  ]
+ },
+ "poi-airport-plane": {
+  "x": 952,
+  "y": 300,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-bank-bank": {
+  "x": 0,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-culture-star": {
+  "x": 68,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-culture-theater": {
+  "x": 136,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-edu-book": {
+  "x": 204,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-edu-school": {
+  "x": 272,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-food-cafe": {
+  "x": 340,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-food-restaurant": {
+  "x": 408,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-fuel-fuel": {
+  "x": 476,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-gov-landmark": {
+  "x": 544,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-health-hospital": {
+  "x": 612,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-hotel-bed": {
+  "x": 680,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-mall-bag": {
+  "x": 748,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-other-dot": {
+  "x": 816,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-pharmacy-plus": {
+  "x": 884,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-shop-cart": {
+  "x": 952,
+  "y": 376,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-transport-bus": {
+  "x": 0,
+  "y": 444,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-transport-train": {
+  "x": 68,
+  "y": 444,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "poi-worship-mosque": {
+  "x": 136,
+  "y": 444,
+  "width": 60,
+  "height": 60,
+  "pixelRatio": 2
+ },
+ "entrance-arrow": {
+  "x": 204,
+  "y": 444,
+  "width": 44,
+  "height": 44,
+  "pixelRatio": 2
+ },
+ "label-entrance": {
+  "x": 256,
+  "y": 444,
+  "width": 68,
+  "height": 44,
+  "pixelRatio": 2,
+  "stretchX": [
+   [
+    36,
+    54
+   ]
+  ],
+  "stretchY": [
+   [
+    20,
+    24
+   ]
+  ],
+  "content": [
+   34,
+   8,
+   58,
+   36
+  ]
+ },
+ "dot-capital": {
+  "x": 332,
+  "y": 444,
+  "width": 30,
+  "height": 30,
+  "pixelRatio": 2
+ },
+ "peak": {
+  "x": 370,
+  "y": 444,
+  "width": 28,
+  "height": 26,
+  "pixelRatio": 2
+ },
+ "dot-city": {
+  "x": 406,
+  "y": 444,
+  "width": 24,
+  "height": 24,
+  "pixelRatio": 2
+ },
+ "dot-town": {
+  "x": 438,
+  "y": 444,
+  "width": 20,
+  "height": 20,
+  "pixelRatio": 2
+ }
+}

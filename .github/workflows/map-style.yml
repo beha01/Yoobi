@@ -1,0 +1,31 @@
+name: map-style
+
+on:
+  push:
+    paths:
+      - 'map/**'
+      - '.github/workflows/map-style.yml'
+  pull_request:
+    paths:
+      - 'map/**'
+      - '.github/workflows/map-style.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: map
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: map/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: python3 -m py_compile scripts/extras.py
+      - name: Собранные стили и спрайты закоммичены
+        run: git diff --exit-code -- styles sprites/yoobi.json sprites/yoobi@2x.json

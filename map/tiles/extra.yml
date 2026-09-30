@@ -1,0 +1,47 @@
+# Дополнительные тайлы для стиля Yoobi Map: то, чего нет в схеме OpenMapTiles.
+# Вход — файл, который готовит scripts/extras.py из выгрузки OSM
+# (см. scripts/build-tiles.sh).
+#
+#   tree      — ярусы кроны объёмных деревьев (tier, shade, min_height, height, decor)
+#   entrance  — подъезды: номер (ref), квартиры (flats), угол стены (angle)
+
+schema_name: Yoobi extra
+schema_description: Объёмные деревья и подъезды для стиля Yoobi Map
+attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
+
+sources:
+  osm:
+    type: osm
+    local_path: data/extras.osm.pbf
+
+layers:
+  - id: tree
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 15
+        include_when:
+          yoobi: tree
+        attributes:
+          - key: tier
+            type: integer
+          - key: shade
+            type: integer
+          - key: min_height
+            type: double
+          - key: height
+            type: double
+          - key: decor
+  - id: entrance
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: entrance
+        attributes:
+          - key: entrance
+          - key: ref
+          - key: flats
+          - key: angle
+            type: integer

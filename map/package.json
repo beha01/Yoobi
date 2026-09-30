@@ -1,0 +1,42 @@
+{
+  "name": "@yoobi/map-style",
+  "version": "1.1.0",
+  "description": "Стиль карты Таджикистана для MapLibre на открытых данных OpenStreetMap",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./sprites/*": "./sprites/*",
+    "./styles/*": "./styles/*"
+  },
+  "files": [
+    "src",
+    "sprites",
+    "styles",
+    "tiles"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/validate.mjs",
+    "demo": "node scripts/serve.mjs"
+  },
+  "peerDependencies": {
+    "maplibre-gl": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "maplibre-gl": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@maplibre/maplibre-gl-style-spec": "^26.4.4",
+    "@resvg/resvg-js": "^2.6.2",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
