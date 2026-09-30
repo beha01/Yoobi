@@ -5,7 +5,7 @@ import math
 import sys
 
 sys.path.insert(0, __file__.rsplit('/', 1)[0])
-from landmarks import Frame, Landmarks, polylabel, ring_area, rounded  # noqa: E402
+from landmarks import Frame, Landmarks, circle, polylabel, ring_area, rounded  # noqa: E402
 
 failed = 0
 
@@ -85,6 +85,31 @@ check('статуя на постаменте — одна', lm.stats.get('statu
       and sum(o[2]['kind'] == 'figure' for o in lm.objects) == 1)
 check('стела заданной высоты', lm.stats.get('steles') == 1
       and max(float(m[1]['height']) for m in lm.models if m[1]['kind'] == 'stele') == 20.0)
+
+# Флагшток 165 м с флагом Таджикистана: мачта, три полосы 2:3:2, корона, шар; контур-мачта не столб.
+lm = Landmarks(*ident)
+lm.flagpoles.append((0.0, 0.0, 165.0, True))
+lm.special.append(('flag_pole', ('w', 7), [[circle(0.5, 0.5, 1.8, 20)]], {'building': 'yes', 'height': '165',
+                                                                         'tower:type': 'flag_pole'}))
+lm.build_special()
+kinds = [m[1]['kind'] for m in lm.models]
+check('флагшток — одна мачта на точку и контур', lm.stats.get('flagpoles') == 1 and kinds.count('mast') == 3)
+check('флаг Таджикистана — три полосы и корона', all(k in kinds for k in ('flag-red', 'flag-white', 'flag-green', 'gold')))
+red = next(m for m in lm.models if m[1]['kind'] == 'flag-red')
+green = next(m for m in lm.models if m[1]['kind'] == 'flag-green')
+check('красная полоса сверху, у вершины мачты', float(red[1]['height']) < 165 and float(red[1]['min_height'])
+      > float(green[1]['height']))
+check('контур-мачта не выдавливается столбом', 'building' not in lm.overrides[('w', 7)]
+      and 'height' not in lm.overrides[('w', 7)])
+
+lm = Landmarks(*ident)
+block = [(0, 0), (76, 0), (76, 83), (0, 83)]
+lm.special.append(('istiqlol', ('w', 8), [[block]], {'building': 'yes', 'historic': 'monument'}))
+lm.build_special()
+top = max(float(m[1]['height']) for m in lm.models)
+check('монумент «Истиқлол» — башня до 112 м, корона выше', abs(top - 115.6) < 0.01
+      and any(o[2]['kind'] == 'dome' and o[2]['tone'] == 'gold' for o in lm.objects))
+check('стилобат монумента — по контуру OSM', lm.overrides[('w', 8)]['height'] == '8')
 
 print('\nМодели в порядке' if not failed else f'\nОшибок: {failed}')
 sys.exit(1 if failed else 0)

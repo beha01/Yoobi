@@ -7,7 +7,8 @@
 // Стиль и поиск не зависят от MapLibre и не трогают DOM: их можно подключить в любой
 // проект (чистый JS, React, Vue, Svelte, Angular) или собрать из стиля style.json
 // для мобильных приложений (scripts/build.mjs). DOM нужен только готовым элементам
-// интерфейса: enableSearchPanel (ui.js) и enableLockedCountries (locked.js).
+// интерфейса: enableSearchPanel (ui.js), enableLockedCountries (locked.js) и
+// enableReports (reports.js) — сообщения курьеров и жителей об изменениях на месте.
 
 import { buildStyle, poiFilter, businessFilter, textFieldFor, LANGUAGES, THEMES } from './style.js';
 import { CATEGORY_BY_ID, OTHER, categoryFor } from './categories.js';
@@ -27,6 +28,7 @@ export { createSearch, loadSearch, normalize } from './search.js';
 export { enableSearchPanel, prettyHours } from './ui.js';
 export { OUTSIDE_MASK, NEIGHBORS } from './borders.js';
 export { enableObjects3D, supportsObjects3D, OBJECTS_3D_LAYER } from './objects3d.js';
+export { enableReports, memoryReports, reportsToGeoJSON } from './reports.js';
 
 // Адрес спрайта рядом с пакетом: <папка пакета>/sprites/yoobi.
 export function defaultSpriteUrl() {

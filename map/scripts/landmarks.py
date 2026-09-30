@@ -14,7 +14,12 @@
   * площадка — цвет покрытия (трава, грунт корта, резина дорожки) и разметка по
     стандартным размерам: футбол, мини-футбол, баскетбол, теннис, волейбол;
   * памятник — гранитный постамент с бронзовой фигурой (статуя, бюст) или
-    ступенчатая стела с золотым шаром (стела, обелиск, воинский мемориал).
+    ступенчатая стела с золотым шаром (стела, обелиск, воинский мемориал);
+  * флагшток — сужающаяся мачта с золотым шаром и развевающийся флаг (у флага
+    Таджикистана — красная, белая и зелёная полосы 2:3:2 и золотая корона); контур
+    здания-мачты (tower:type=flag_pole) не выдавливается столбом;
+  * монумент «Истиқлол ва Озодӣ» — по открытым сведениям: высота 121 м, основание
+    около 30 м, башня 91 м, наверху — корона, как на гербе.
 
 Геометрия — на плоскости в метрах (функции to_xy / to_lonlat из extras.py).
 """
@@ -217,6 +222,23 @@ def monument_kind(t):
     return None
 
 
+def tajik_flag(t):
+    return (t.get('country') == 'TJ' or t.get('flag:wikidata') == 'Q160124' or t.get('subject:wikidata') == 'Q863'
+            or 'tajikistan' in (t.get('flag:name') or '').lower())
+
+
+# Ориентиры со своей моделью: по номеру в OSM, а если контур перерисуют — по названию.
+SPECIAL = {('w', 1166323844): 'istiqlol'}
+
+
+def special_kind(t, key):
+    if key in SPECIAL:
+        return SPECIAL[key]
+    if t.get('historic') == 'monument' and (t.get('name') or '').startswith('Истиқлол ва Озодӣ'):
+        return 'istiqlol'
+    return None
+
+
 def square(x, y, half, angle=0.0):
     c, s = math.cos(angle), math.sin(angle)
     return [(x + (u * c - v * s) * half, y + (u * s + v * c) * half) for u, v in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
@@ -245,6 +267,8 @@ class Landmarks:
         self.sites = []        # индексы мечетей-территорий без здания
         self.buildings = []    # (ключ, кольца xy, теги) — здания на территориях мечетей и стадионов
         self.site_grid = {}    # клетка 200 м -> [(рамка, 'mosque'|'stadium', индекс)]
+        self.flagpoles = []    # (x, y, высота, флаг Таджикистана)
+        self.special = []      # (вид, ключ, кольца xy, теги) — ориентиры со своей моделью
         # Результат build()
         self.objects = []      # (lon, lat, теги) — купола и шары для объёмного слоя
         self.models = []       # ([(lon, lat)], теги) — барабаны, минареты, трибуны
@@ -307,6 +331,9 @@ class Landmarks:
 
     def node(self, o):
         t = o.tags
+        if t.get('man_made') == 'flagpole' and (number(t.get('height')) or 0) >= 8:
+            x, y = self.to_xy(o.location.lon, o.location.lat)
+            self.flagpoles.append((x, y, number(t.get('height')), tajik_flag(t)))
         if t.get('tower:type') == 'minaret' or t.get('man_made') == 'minaret':
             x, y = self.to_xy(o.location.lon, o.location.lat)
             self.minarets.append((x, y, 1.8, number(t.get('height')) or 28.0))
@@ -327,6 +354,12 @@ class Landmarks:
     def building(self, o):
         """Здание внутри территории мечети или стадиона запоминается целиком."""
         t = o.tags
+        if t.get('tower:type') == 'flag_pole' or t.get('man_made') == 'flagpole':
+            self.special.append(('flag_pole', self.key(o), self.rings(o), {tag.k: tag.v for tag in t}))
+            return
+        if special_kind(t, self.key(o)):
+            self.special.append((special_kind(t, self.key(o)), self.key(o), self.rings(o), {tag.k: tag.v for tag in t}))
+            return
         if (t.get('amenity') == 'place_of_worship' and t.get('religion') == 'muslim') or t.get('building') == 'mosque':
             return  # уже взято в первом проходе
         for rings in self.rings(o):
@@ -726,6 +759,78 @@ class Landmarks:
             self.obj(x, y, 'figure', fr, fh, top + fh * 0.96, top, 'bronze')
             count['busts' if bust else 'statues'] += 1
         self.stats.update(count)
+
+    def build_special(self):
+        """Флагштоки и ориентиры со своей моделью (см. описание модуля)."""
+        count = dict(flagpoles=0, monuments_special=0)
+        poles = list(self.flagpoles)
+        for kind, key, rings_list, tags in self.special:
+            if not rings_list:
+                continue
+            ring = rings_list[0][0]
+            x, y = centroid(ring)
+            if kind == 'flag_pole':
+                # Контур-мачта из OSM: вместо столба толщиной с контур — модель мачты.
+                self.overrides[key] = {k: v for k, v in tags.items() if k not in ('building', 'height', 'building:levels')}
+                if not any(math.hypot(px - x, py - y) < 15 for px, py, *_ in poles):
+                    poles.append((x, y, number(tags.get('height')) or 20.0, tajik_flag(tags)))
+            elif kind == 'istiqlol':
+                self.istiqlol(key, ring, tags)
+                count['monuments_special'] += 1
+        for x, y, height, national in poles:
+            self.flagpole(x, y, height, national)
+            count['flagpoles'] += 1
+        self.stats.update(count)
+
+    def flagpole(self, x, y, height, national):
+        r0 = max(0.12, height * 0.009)
+        self.model(circle(x, y, r0 * 3.2, 16), 'pedestal', 0.0, min(1.4, 0.3 + height * 0.006))
+        for (z0, z1, k) in ((0.0, 0.45, 1.0), (0.45, 0.8, 0.78), (0.8, 1.0, 0.58)):
+            self.model(circle(x, y, r0 * k, 12), 'mast', height * z0, height * z1)
+        fr = r0 * 0.9
+        self.obj(x, y, 'finial', fr, fr, height + fr * 0.7, height - fr * 0.2, 'gold')
+        # Полотнище 2:1, волна растёт к свободному краю; ветер — на восток с небольшим разбросом.
+        fw = height * 0.36
+        fh = fw / 2
+        top = height - fr * 1.6
+        angle = math.radians(-8 + (x * 3.7 + y * 1.3) % 16)
+        c, s = math.cos(angle), math.sin(angle)
+        thick = max(0.06, fw * 0.008)
+
+        def strip(u0, u1, extra=0.0, n=28):
+            upper, lower = [], []
+            for i in range(n + 1):
+                u = u0 + (u1 - u0) * i / n
+                v = fw * 0.055 * math.sin(2 * math.pi * u / (fw * 0.72)) * (u / fw) ** 0.8
+                h = (thick + extra) / 2
+                upper.append((u, v + h))
+                lower.append((u, v - h))
+            return [(x + (u + r0) * c - v * s, y + (u + r0) * s + v * c) for u, v in upper + lower[::-1]]
+
+        cloth = strip(0.0, fw)
+        if national:  # Таджикистан: красная, белая и зелёная полосы 2:3:2 и золотая корона в центре
+            self.model(cloth, 'flag-green', top - fh, top - fh * 5 / 7)
+            self.model(cloth, 'flag-white', top - fh * 5 / 7, top - fh * 2 / 7)
+            self.model(cloth, 'flag-red', top - fh * 2 / 7, top)
+            crown = strip(fw * 0.5 - fh * 0.11, fw * 0.5 + fh * 0.11, extra=thick * 0.6, n=6)
+            self.model(crown, 'gold', top - fh * 0.56, top - fh * 0.44)
+        else:
+            self.model(cloth, 'flag-white', top - fh, top)
+
+    def istiqlol(self, key, ring, tags):
+        """«Истиқлол ва Озодӣ»: стилобат по контуру OSM, круглое основание до 30 м, сужающаяся
+        башня до 112 м и золотая корона до 121 м."""
+        self.overrides[key] = {**{k: v for k, v in tags.items() if k not in ('building:levels',)}, 'height': '8',
+                               'building': 'yes'}
+        x, y, d = polylabel([ring])
+        base_r = max(8.0, min(d * 0.62, 26.0))
+        self.model(circle(x, y, base_r, 40), 'monument', 8.0, 30.0)
+        self.model(circle(x, y, base_r * 0.72, 40), 'monument', 30.0, 33.0)
+        for z0, z1, r in ((33.0, 60.0, 7.6), (60.0, 85.0, 6.6), (85.0, 104.0, 5.6), (104.0, 112.0, 4.8)):
+            self.model(circle(x, y, r, 24), 'monument', z0, z1)
+        self.model(circle(x, y, 5.6, 24), 'gold', 112.0, 115.6)
+        self.obj(x, y, 'dome', 4.9, 5.4, 115.6, 115.6, 'gold')
+        self.obj(x, y, 'finial', 0.9, 0.9, 121.6, 120.2, 'gold')
 
     def dome(self, x, y, r, base, tone, grand, drum=True):
         z = base

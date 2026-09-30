@@ -409,36 +409,43 @@
   "height": 32,
   "pixelRatio": 2
  },
- "dot-capital": {
+ "pattern-construction": {
   "x": 272,
+  "y": 224,
+  "width": 32,
+  "height": 32,
+  "pixelRatio": 2
+ },
+ "dot-capital": {
+  "x": 312,
   "y": 224,
   "width": 30,
   "height": 30,
   "pixelRatio": 2
  },
  "peak": {
-  "x": 310,
+  "x": 350,
   "y": 224,
   "width": 28,
   "height": 26,
   "pixelRatio": 2
  },
  "dot-city": {
-  "x": 346,
+  "x": 386,
   "y": 224,
   "width": 24,
   "height": 24,
   "pixelRatio": 2
  },
  "oneway": {
-  "x": 378,
+  "x": 418,
   "y": 224,
   "width": 40,
   "height": 24,
   "pixelRatio": 2
  },
  "dot-town": {
-  "x": 426,
+  "x": 466,
   "y": 224,
   "width": 20,
   "height": 20,

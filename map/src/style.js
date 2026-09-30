@@ -79,6 +79,18 @@ export const COLORS = {
   buildingOutline: '#D3CABB',
   building3d: '#F5EFE6',
   building3dTall: '#E9E2D7',
+  // Здания по назначению (BUILDING_TINTS): плоские и объёмные.
+  tintEdu: '#F0E2BE', tintEdu3d: '#F7EBCB',
+  tintHealth: '#F1DAD6', tintHealth3d: '#F8E3DF',
+  tintGov: '#DBE0EA', tintGov3d: '#E7EBF2',
+  tintWorship: '#D6E7DA', tintWorship3d: '#E2F0E5',
+  tintShop: '#E7DDEB', tintShop3d: '#F1E8F4',
+  tintIndustry: '#DFDBD4', tintIndustry3d: '#E9E6E0',
+  tintConstruction: '#EFDCC4', tintConstruction3d: '#F4E5D1',
+  // Стройки: участок со штриховкой, подпись, дороги в строительстве пунктиром.
+  construction: '#E3A45C',
+  constructionFill: '#F7E9D6',
+  constructionLabel: '#9A5B1E',
   sidewalk: '#F2E5C0',
   curb: '#FFFFFF',
   asphaltMajor: '#A9AEB4',
@@ -131,6 +143,13 @@ export const COLORS = {
   stand: '#D9DDE2',
   stand2: '#C7D0DA',
   canopy: '#F4F6F8',
+  // Флагшток и монументы: мачта, полосы флага Таджикистана, золото короны, белый камень.
+  mast: '#DCE1E6',
+  gold: '#D9AE45',
+  monument: '#F6F2EA',
+  flagRed: '#D0102B',
+  flagWhite: '#FFFFFF',
+  flagGreen: '#1C8A3A',
   houseNumber: '#7B7064',
   houseNumberHalo: '#F7F3EC',
   buildingName: '#6E6357',
@@ -182,6 +201,16 @@ export const NIGHT_COLORS = {
   buildingOutline: '#39404B',
   building3d: '#3A424F',
   building3dTall: '#343C48',
+  tintEdu: '#393526', tintEdu3d: '#4A4534',
+  tintHealth: '#3C2E32', tintHealth3d: '#4C3A3F',
+  tintGov: '#2E3544', tintGov3d: '#3C4557',
+  tintWorship: '#2B3C32', tintWorship3d: '#384D40',
+  tintShop: '#362E3D', tintShop3d: '#45394D',
+  tintIndustry: '#2F3239', tintIndustry3d: '#3C4048',
+  tintConstruction: '#3D3325', tintConstruction3d: '#4C402E',
+  construction: '#B8813F',
+  constructionFill: '#2C2821',
+  constructionLabel: '#E0B27A',
   sidewalk: '#303640',
   curb: '#566070',
   asphaltMajor: '#4A5362',
@@ -232,6 +261,12 @@ export const NIGHT_COLORS = {
   stand: '#4B5361',
   stand2: '#434B58',
   canopy: '#5F6877',
+  mast: '#8A94A1',
+  gold: '#B08A34',
+  monument: '#6B7280',
+  flagRed: '#9E1426',
+  flagWhite: '#C9CED6',
+  flagGreen: '#1F6B36',
   houseNumber: '#9AA3AE',
   houseNumberHalo: '#20262F',
   buildingName: '#A6AFBA',
@@ -266,6 +301,22 @@ const FONT = {
 };
 
 const SOURCE = 'openmaptiles';
+
+// Цвет здания по назначению: scripts/extras.py пишет в building:colour эти коды тем домам,
+// у которых нет своего цвета фасада; стиль узнаёт код и красит дом в тон темы.
+export const BUILDING_TINTS = {
+  edu: '#f3e3b5', health: '#f4d3d0', gov: '#d9deea', worship: '#d4e7da', shop: '#e9ddee', industry: '#e1ded9',
+  construction: '#f3dec3',
+};
+const TINT_KEYS = { edu: 'Edu', health: 'Health', gov: 'Gov', worship: 'Worship', shop: 'Shop', industry: 'Industry',
+  construction: 'Construction' };
+function tintExpression(C, three, fallback) {
+  const cases = ['match', ['downcase', ['to-string', ['coalesce', ['get', 'colour'], '']]]];
+  for (const [kind, code] of Object.entries(BUILDING_TINTS)) cases.push(code, C[`tint${TINT_KEYS[kind]}${three ? '3d' : ''}`]);
+  cases.push(fallback);
+  return cases;
+}
+const isTinted = ['in', ['downcase', ['to-string', ['coalesce', ['get', 'colour'], '']]], ['literal', Object.values(BUILDING_TINTS)]];
 // Плоская крона в спрайте — круг диаметром TREE_CROWN_PX (scripts/sprite.mjs). Размер значка
 // на 15 зуме для кроны в 1 м: метров в пикселе на широте Душанбе — 1,8668.
 export const TREE_CROWN_PX = 40;
@@ -345,8 +396,18 @@ function peakLabelExpression(lang) {
     ['case', ['has', 'ele'], ['concat', '\n', ['to-string', ['get', 'ele']], ' м'], ''], { 'font-scale': 0.85 }];
 }
 
+// Подпись стройки: название (если есть) и слово «стройка» мельче под ним.
+const CONSTRUCTION_WORD = { ru: 'стройка', tg: 'сохтмон', en: 'construction' };
+function constructionLabelExpression(lang) {
+  const word = CONSTRUCTION_WORD[lang] || CONSTRUCTION_WORD.ru;
+  return ['case', ['all', ['has', 'name'], ['!=', ['get', 'name'], '']],
+    ['format', ['get', 'name'], {}, '\n', {}, word, { 'font-scale': 0.85 }],
+    ['format', word.charAt(0).toUpperCase() + word.slice(1), {}]];
+}
+
 const TEXT_BUILDERS = {
   name: nameExpression, street: streetNameExpression, river: riverNameExpression, peak: peakLabelExpression,
+  construction: constructionLabelExpression,
   neighbor: (lang) => ['get', `name_${lang}`],
   label: (lang) => ['get', `name_${lang}`],
 };
@@ -377,13 +438,15 @@ export function poiFilter(kind, category = null) {
     ['in', ['get', 'subclass'], ['literal', MINOR_SUBCLASSES]],
   ];
   const landmark = ['in', cat, ['literal', LANDMARK_CATEGORIES]];
+  const stop = ['in', ['get', 'subclass'], ['literal', MINOR_SUBCLASSES]];
   const kinds = {
     main: ['all', ['!', minor], ['!', landmark]],
     landmark: ['all', ['!', minor], landmark],
     // Значки без подписей: в центре города мест сотни, поэтому показываются только
     // самые важные в каждой клетке сетки тайла (rank из схемы OpenMapTiles).
     icon: category ? ['!', minor] : ['all', ['!', minor], ['<=', ['coalesce', ['get', 'rank'], 99], 2]],
-    minor,
+    minor: ['all', minor, ['!', stop]],
+    stop,
   };
   const filter = ['all', hasName,
     ['!', ['in', ['get', 'class'], ['literal', HIDDEN_CLASSES]]],
@@ -648,6 +711,28 @@ export function buildStyle(options = {}) {
       'source-layer': 'park',
       paint: { 'fill-color': C.parkFar, 'fill-opacity': zoomLinear(6, 0.25, 12, 0.4) },
     },
+    // Стройки: штриховка участка и пунктирная кромка — где идёт стройка, видно издалека.
+    ...(extra ? [{
+      id: 'construction-site',
+      type: 'fill',
+      source: EXTRA,
+      'source-layer': 'site',
+      minzoom: 13,
+      filter: ['all', isPolygon, ['==', ['get', 'kind'], 'construction']],
+      metadata: { 'yoobi:group': 'details' },
+      paint: { 'fill-pattern': 'pattern-construction', 'fill-opacity': zoomLinear(13, 0, 13.6, 1) },
+    }, {
+      id: 'construction-site-outline',
+      type: 'line',
+      source: EXTRA,
+      'source-layer': 'site',
+      minzoom: 14,
+      filter: ['all', isPolygon, ['==', ['get', 'kind'], 'construction']],
+      metadata: { 'yoobi:group': 'details' },
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': C.construction, 'line-width': zoomExp(14, 0.7, 18, 2), 'line-dasharray': [3, 2],
+        'line-opacity': 0.85 },
+    }] : []),
     ...(extra ? [{
       id: 'pitch-surface',
       type: 'fill',
@@ -801,6 +886,18 @@ export function buildStyle(options = {}) {
       paint: { 'line-color': C.railDash, 'line-width': zoomExp(13, 0.6, 18, 2), 'line-dasharray': [3, 3] },
     },
     ...roadLayers(C),
+    {
+      id: 'road-construction',
+      type: 'line',
+      source: SOURCE,
+      'source-layer': 'transportation',
+      minzoom: 13,
+      filter: ['in', ['get', 'class'], ['literal', ['motorway_construction', 'trunk_construction', 'primary_construction',
+        'secondary_construction', 'tertiary_construction', 'minor_construction', 'service_construction']]],
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': C.construction, 'line-width': zoomExp(13, 1, 16, 4, 18, 11), 'line-dasharray': [2, 1.4],
+        'line-opacity': 0.85 },
+    },
     ...markingLayers(C),
     ...(extra ? [{
       // «Зебры»: широкая линия поперёк дороги с частым пунктиром даёт полосы вдоль неё.
@@ -858,10 +955,19 @@ export function buildStyle(options = {}) {
       'source-layer': 'building',
       minzoom: 13,
       paint: {
-        'fill-color': C.building,
+        'fill-color': tintExpression(C, false, C.building),
         'fill-outline-color': C.buildingOutline,
         'fill-opacity': zoomLinear(13, 0, 13.5, 1),
       },
+    },
+    {
+      id: 'building-construction',
+      type: 'fill',
+      source: SOURCE,
+      'source-layer': 'building',
+      minzoom: 15,
+      filter: ['==', ['downcase', ['to-string', ['coalesce', ['get', 'colour'], '']]], BUILDING_TINTS.construction],
+      paint: { 'fill-pattern': 'pattern-construction', 'fill-opacity': zoomLinear(15, 0, 15.5, 0.9) },
     },
     ...(extra && o.trees && !o.trees3d ? [{
       id: 'trees',
@@ -896,6 +1002,7 @@ export function buildStyle(options = {}) {
         // Цвет фасада из OSM (building:colour), сильно смягчённый к палитре карты: серые и
         // тёмные фасады иначе выглядят сверху как провалы среди светлых крыш.
         'fill-extrusion-color': ['case',
+          isTinted, tintExpression(C, true, C.building3d),
           ['has', 'colour'], ['interpolate-lab', ['linear'], 0.72, 0, ['to-color', ['get', 'colour']], 1, C.building3d],
           ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 6], 0, C.building3d, 60, C.building3dTall]],
         'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
@@ -931,6 +1038,8 @@ export function buildStyle(options = {}) {
       paint: {
         'fill-extrusion-color': ['match', ['get', 'kind'],
           ['stand'], C.stand, ['stand2'], C.stand2, ['canopy'], C.canopy, ['plinth', 'pedestal'], C.pedestal,
+          'mast', C.mast, 'gold', C.gold, 'monument', C.monument,
+          'flag-red', C.flagRed, 'flag-white', C.flagWhite, 'flag-green', C.flagGreen,
           C.minaret],
         'fill-extrusion-height': ['coalesce', ['get', 'height'], 3],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
@@ -1037,6 +1146,23 @@ export function buildStyle(options = {}) {
           'text-padding': 4,
         },
         paint: { 'text-color': C.buildingName, 'text-halo-color': C.haloSoft, 'text-halo-width': 1.4 },
+      },
+      {
+        id: 'construction-label',
+        type: 'symbol',
+        source: EXTRA,
+        'source-layer': 'site',
+        minzoom: 14.5,
+        filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'kind'], 'construction']],
+        metadata: { 'yoobi:group': 'details', 'yoobi:text': 'construction' },
+        layout: {
+          'text-field': constructionLabelExpression(o.lang),
+          'text-font': FONT.italic,
+          'text-size': zoomLinear(14.5, 10.5, 17, 12),
+          'text-max-width': 8,
+          'text-padding': 6,
+        },
+        paint: { 'text-color': C.constructionLabel, 'text-halo-color': C.haloSoft, 'text-halo-width': 1.4 },
       },
       // Светофоры, ворота, шлагбаумы, лавочки, фонтаны, туалеты, вода, парковки.
       ...urbanPointLayers(C),
@@ -1496,6 +1622,12 @@ function poiLayers(o, C) {
     {
       ...base, id: 'poi-minor', minzoom: 17.2, filter: poiFilter('minor', o.category), metadata: meta('minor'),
       layout: poiLayout(image, name, { size: 10.5, iconSize: 0.66, sort }), paint: poiPaint(C),
+    },
+    // Остановки — раньше прочей мелочи: курьеру и пассажиру они нужны уже на подходе.
+    {
+      ...base, id: 'poi-stop', minzoom: 15.5, filter: poiFilter('stop', o.category), metadata: meta('minor'),
+      layout: poiLayout(image, ['step', ['zoom'], '', 16.4, name], { size: 10.5, iconSize: 0.56, sort }),
+      paint: poiPaint(C),
     },
     {
       ...base, id: 'poi-label', minzoom: 15, filter: poiFilter('main', o.category), metadata: meta('main'),

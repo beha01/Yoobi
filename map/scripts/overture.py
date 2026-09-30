@@ -164,6 +164,8 @@ def record(row):
         'brand': brand_names.get('primary') or '',
         'sources': sorted({s['dataset'] for s in row['sources'] or [] if s.get('dataset')}),
         'licenses': sorted({s['license'] for s in row['sources'] or [] if s.get('license')}),
+        # Когда источник последний раз обновлял место — карточка пишет «сведения от …».
+        'updated': max((str(s.get('update_time') or '')[:10] for s in row['sources'] or []), default=''),
     }
 
 

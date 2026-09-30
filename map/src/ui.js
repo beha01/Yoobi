@@ -20,6 +20,13 @@ const TEXT = {
     copied: 'Скопировано', results: 'Результаты поиска', km: 'км', m: 'м', loading: 'Загружаю поиск…',
     approx: 'Точное место не указано — показан центр города', source: 'Данные', postcode: 'Индекс',
     flats: 'Квартиры', nearest: 'Ближайший адрес',
+    checked: (d) => `Проверено на месте ${d}`, updated: (d) => `Сведения от ${d}`, opened: (d) => `Открыто ${d}`,
+    fromNote: (d) => `По сообщению пользователя OSM от ${d} — ещё не проверено`,
+    approxPlace: 'Место примерное: известен только адрес',
+    tempClosed: 'Временно закрыто',
+    report: 'Сообщить об изменении',
+    noEntrances: 'Подъезды у этого дома ещё не отмечены', markEntrance: 'Отметьте вход через «Сообщить об изменении»',
+    fromReport: (d) => `По сообщению пользователя карты от ${d} — ещё не проверено`,
   },
   tg: {
     placeholder: 'Суроға, кӯча, макон', clear: 'Тоза кардан', close: 'Пӯшидан', empty: 'Ҳеҷ чиз ёфт нашуд',
@@ -28,6 +35,13 @@ const TEXT = {
     results: 'Натиҷаҳои ҷустуҷӯ', km: 'км', m: 'м', loading: 'Ҷустуҷӯ бор мешавад…',
     approx: 'Ҷойи дақиқ нишон дода нашудааст', source: 'Маълумот', postcode: 'Индекс', flats: 'Хонаҳо',
     nearest: 'Суроғаи наздиктарин',
+    checked: (d) => `Дар ҷой санҷида шуд ${d}`, updated: (d) => `Маълумот аз ${d}`, opened: (d) => `Кушода шуд ${d}`,
+    fromNote: (d) => `Аз рӯи хабари корбари OSM аз ${d} — ҳанӯз санҷида нашудааст`,
+    approxPlace: 'Ҷой тахминӣ: танҳо суроға маълум аст',
+    tempClosed: 'Муваққатан баста',
+    report: 'Хабар додан дар бораи тағйирот',
+    noEntrances: 'Даромадгоҳҳои ин хона ҳанӯз қайд нашудаанд', markEntrance: 'Даромадро тавассути «Хабар додан» қайд кунед',
+    fromReport: (d) => `Аз рӯи хабари корбари харита аз ${d} — ҳанӯз санҷида нашудааст`,
   },
   en: {
     placeholder: 'Address, street, place', clear: 'Clear', close: 'Close', empty: 'Nothing found',
@@ -36,6 +50,13 @@ const TEXT = {
     copied: 'Copied', results: 'Search results', km: 'km', m: 'm', loading: 'Loading search…',
     approx: 'Exact location unknown — city centre shown', source: 'Data', postcode: 'Postcode',
     flats: 'Flats', nearest: 'Nearest address',
+    checked: (d) => `Checked on the ground ${d}`, updated: (d) => `Data as of ${d}`, opened: (d) => `Opened ${d}`,
+    fromNote: (d) => `Reported by an OSM user on ${d} — not verified yet`,
+    approxPlace: 'Approximate location: only the address is known',
+    tempClosed: 'Temporarily closed',
+    report: 'Report a change',
+    noEntrances: 'Entrances of this building are not mapped yet', markEntrance: 'Mark the entrance with “Report a change”',
+    fromReport: (d) => `Reported by a map user on ${d} — not verified yet`,
   },
 };
 
@@ -180,6 +201,9 @@ const I = {
   street: 'M11 2h2v4h-2zm0 7h2v6h-2zm0 9h2v4h-2zM4 2h2v20H4zm14 0h2v20h-2z',
   place: 'M12 2 3 7v2h18V7l-9-5zM5 11v7H4v3h16v-3h-1v-7h-2v7h-3v-7h-2v7H9v-7H5z',
   copy: 'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z',
+  flag: 'M14.4 6 14 4H5v17h2v-7h5.6l.4 2h7V6z',
+  check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+  info: 'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
 };
 
 const CSS = `
@@ -227,6 +251,11 @@ const CSS = `
 [data-yoobi-theme="dark"] .yoobi-closed{color:#f07470}
 .yoobi-note{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--y-chip);color:var(--y-muted);font-size:13px}
 .yoobi-source{margin-top:8px;color:var(--y-muted);font-size:11.5px}
+.yoobi-facts li.yoobi-fresh{color:var(--y-muted);font-size:12.5px}
+.yoobi-facts li.yoobi-ok{color:#1e9e57;font-size:12.5px}
+.yoobi-facts li.yoobi-warn{color:#b26a00;font-size:12.5px}
+[data-yoobi-theme="dark"] .yoobi-facts li.yoobi-ok{color:#4cc27f}
+[data-yoobi-theme="dark"] .yoobi-facts li.yoobi-warn{color:#f0b35a}
 .yoobi-card .yoobi-icon-btn.yoobi-x{position:absolute;top:10px;right:10px}
 .yoobi-facts{display:grid;gap:8px;margin:12px 0 4px;padding:0;list-style:none}
 .yoobi-facts li{display:flex;gap:10px;align-items:flex-start}
@@ -241,6 +270,12 @@ const CSS = `
 .yoobi-coords{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--y-muted);font-size:12px;font-variant-numeric:tabular-nums}
 .yoobi-coords button{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:8px;padding:4px 8px;
   background:var(--y-chip);color:var(--y-fg);font:inherit;cursor:pointer}
+.yoobi-report-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:10px;padding:8px 10px;
+  border:1px solid var(--y-line);border-radius:10px;background:transparent;color:var(--y-fg);font:600 13px/1.2 inherit;
+  font-family:inherit;cursor:pointer}
+.yoobi-report-btn svg{color:#e8770e}
+.yoobi-report-btn:hover{background:var(--y-hover)}
+.yoobi-report-btn:focus-visible{outline:2px solid var(--y-accent);outline-offset:1px}
 .yoobi-pin{position:absolute;left:0;top:0;width:30px;height:40px;margin:-38px 0 0 -15px;z-index:2;pointer-events:none;
   filter:drop-shadow(0 3px 4px rgba(0,0,0,.3));will-change:transform}
 .yoobi-pin svg{display:block}
@@ -346,7 +381,7 @@ const PLACE_LAYERS = ['poi-icon', 'poi-label', 'poi-landmark', 'poi-minor', 'par
  * Панель поиска и карточки мест. search — результат createSearch()/loadSearch().
  * Возвращает { open(item), close(), setLang(lang), destroy() }.
  */
-export function enableSearchPanel(map, source, { lang = 'ru', placeholder, clickable = true } = {}) {
+export function enableSearchPanel(map, source, { lang = 'ru', placeholder, clickable = true, onReport = null } = {}) {
   let t = TEXT[lang] || TEXT.ru;
   // Индекс может ещё грузиться (передано обещание): строка поиска появляется сразу.
   let search = source && typeof source.then !== 'function' ? source : null;
@@ -498,6 +533,17 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     if (info.routes) out.push(`<li>${svg(ICONS.bus)}<span>${esc(formatRoutes(info.routes, lang))}</span></li>`);
     if (info.site) out.push(`<li>${svg(I.globe)}${link(info.site)}</li>`);
     for (const social of [info.social, info.insta].filter(Boolean)) out.push(`<li>${svg(I.globe)}${link(social)}</li>`);
+    // Насколько сведения свежие: курьеру важно, не устарело ли место.
+    const day = (d) => String(d).slice(0, 10).split('-').reverse().join('.');
+    if (info.tc) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.tempClosed)}</span></li>`);
+    if (info.ap) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.approxPlace)}</span></li>`);
+    if (info.nt) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.fromNote(day(info.nt)))}</span></li>`);
+    if (info.rp) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.fromReport(day(info.rp)))}</span></li>`);
+    if (info.since && Date.now() - Date.parse(info.since) < 3 * 365 * 864e5) {
+      out.push(`<li class="yoobi-fresh">${svg(I.clock)}<span>${esc(t.opened(day(info.since)))}</span></li>`);
+    }
+    if (info.chk) out.push(`<li class="yoobi-ok">${svg(I.check)}<span>${esc(t.checked(day(info.chk)))}</span></li>`);
+    else if (info.up && !info.nt && !info.rp) out.push(`<li class="yoobi-fresh">${svg(I.clock)}<span>${esc(t.updated(day(info.up)))}</span></li>`);
     const list = out.length ? `<ul class="yoobi-facts">${out.join('')}</ul>` : '';
     const note = item.approx ? `<div class="yoobi-note">${esc(t.approx)}</div>` : '';
     return list + note;
@@ -535,10 +581,15 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
       <div class="yoobi-card-type">${esc(type)}</div></div></div>
       ${extra}${section(`${t.entrances} · ${entrances.length}`, entrances)}${section(`${t.inside} · ${inside.length}`, inside)}${section(nearbyTitle, nearby)}
       <div class="yoobi-coords"><span>${coords}</span><button type="button" title="${esc(t.copy)}">${svg(I.copy, 14)}<span>${esc(t.copy)}</span></button></div>
+      ${onReport ? `<button type="button" class="yoobi-report-btn">${svg(I.flag, 16)}<span>${esc(t.report)}</span></button>` : ''}
       ${sources.size ? `<div class="yoobi-source">${esc(t.source)}: ${[...sources].map((n) => esc(dated(n))).join(' · ')}</div>` : ''}`;
     card.setAttribute('aria-label', title);
     card.classList.remove('yoobi-hidden');
     card.querySelector('.yoobi-x').addEventListener('click', close);
+    // «Сообщить об изменении»: что знает курьер или житель, а в данных ещё нет (src/reports.js).
+    card.querySelector('.yoobi-report-btn')?.addEventListener('click', () => onReport({
+      item, title, type, at, entrances, inside, house: item.kind === 'address', lang,
+    }));
     const copy = card.querySelector('.yoobi-coords button');
     copy.addEventListener('click', () => {
       const done = () => { copy.lastChild.textContent = t.copied; };
@@ -658,6 +709,10 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     // Соседние страны под «заморозкой» — их нажатие обрабатывает enableLockedCountries.
     const locked = ['outside-frost', 'neighbor-lock'].filter((id) => map.getLayer(id));
     if (locked.length && map.queryRenderedFeatures(e.point, { layers: locked }).length) return;
+    // Отметка на карте (src/reports.js): нажатия ставят точку, а не открывают карточку.
+    if (container.dataset.yoobiMode) return;
+    const notes = ['yoobi-reports-dot', 'yoobi-reports-line'].filter((id) => map.getLayer(id));
+    if (notes.length && map.queryRenderedFeatures(e.point, { layers: notes }).length) return;
     const layers = [...PLACE_LAYERS, ...BUILDING_LAYERS].filter((id) => map.getLayer(id));
     const features = map.queryRenderedFeatures(e.point, { layers });
     const placeFeature = features.find((f) => PLACE_LAYERS.includes(f.layer.id));
@@ -695,8 +750,13 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     const nearby = nearest ? [nearest] : found.places.length ? [] : search.nearby(lon, lat, { radius: 40, lang, limit: 5 });
     // У мечети высота зала в тайлах оценена по размеру (scripts/landmarks.py) — этажи не выдумываем.
     const worship = found.places.some((p) => p.category === 'worship');
+    // Многоэтажный жилой дом без отмеченных подъездов: честно сказать и предложить отметить вход.
+    const levels = address?.info?.lv || floorsFromHeight(building.properties.render_height);
+    const flats = (address?.type || '').match(/жил|apart|хона/i) || levels >= 4;
+    const missing = !found.entrances.length && !worship && flats && levels >= 3
+      ? `<div class="yoobi-note">${esc(t.noEntrances)}${onReport ? `. ${esc(t.markEntrance)}` : ''}</div>` : '';
     show({ item, title: address ? address.title : t.building, alt: address?.alt,
-      type: houseType(address, worship ? 0 : building.properties.render_height), extra: houseFacts(address),
+      type: houseType(address, worship ? 0 : building.properties.render_height), extra: houseFacts(address) + missing,
       entrances: found.entrances, inside: found.places, nearby, nearbyTitle: nearest ? t.nearest : t.nearby,
       at: [lon, lat], marker: false });
     setSelection(building, found.entrances);

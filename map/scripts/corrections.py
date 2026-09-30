@@ -7,7 +7,8 @@
 и в поиск. Лучше потом внести то же самое в openstreetmap.org — тогда правку можно убрать.
 
   {
-    "change": [{"osm": "node/5480014421", "tags": {"name": "…"}, "drop": ["name:ru"], "note": "…"}],
+    "change": [{"osm": "node/5480014421", "tags": {"name": "…"}, "drop": ["name:ru"], "date": "2026-09-30",
+                "location": [68.75, 38.57], "note": "…"}],
     "add": [
       {"lon": 68.75, "lat": 38.57, "tags": {"amenity": "restaurant", "name": "…"}, "note": "…"},
       {"line": [[68.77, 38.58], [68.78, 38.58]], "tags": {"highway": "secondary", "bridge": "yes", "layer": "1"}},
@@ -18,9 +19,12 @@
 
 «change» заменяет и добавляет теги объекта OSM (drop — удалить теги), «remove» убирает
 объект целиком (у линий и отношений — только теги, геометрия нужна соседям), «add»
-добавляет точку, линию или контур с новыми номерами — выше любых в OSM.
+добавляет точку, линию или контур с новыми номерами — выше любых в OSM. date — день,
+когда сведения проверены на месте: карточка покажет «проверено …». Тег yoobi:approx=метры
+у точки — место известно примерно (по адресу), карточка попросит уточнить.
 """
 
+import datetime as dt
 import json
 
 import osmium
@@ -41,11 +45,21 @@ def load(path):
     changes, removed = {}, set()
     for item in data.get('change', []):
         kind, oid = item['osm'].split('/')
-        changes[(KINDS[kind], int(oid))] = (item.get('tags', {}), set(item.get('drop', [])))
+        tags = dict(item.get('tags', {}))
+        if item.get('date'):
+            tags.setdefault('check_date', item['date'])  # когда проверено на месте — видно в карточке
+        # location — точку (заведение, подъезд) перенести: оно на самом деле в другом месте.
+        changes[(KINDS[kind], int(oid))] = (tags, set(item.get('drop', [])), item.get('location'))
     for ref in data.get('remove', []):
         kind, oid = ref.split('/')
         removed.add((KINDS[kind], int(oid)))
-    return {'change': changes, 'remove': removed, 'add': data.get('add', [])}
+    added = []
+    for item in data.get('add', []):
+        item = dict(item, tags=dict(item.get('tags', {})))
+        if item.get('date'):
+            item['tags'].setdefault('check_date', item['date'])
+        added.append(item)
+    return {'change': changes, 'remove': removed, 'add': added}
 
 
 def apply(src, dst, corr):
@@ -55,19 +69,29 @@ def apply(src, dst, corr):
     reader.close()
     w = osmium.SimpleWriter(dst, overwrite=True, header=header)
     applied = 0
+    now = dt.datetime.now(dt.timezone.utc)
     nodes = [a for a in corr['add'] if 'lon' in a]
     shapes = [a for a in corr['add'] if 'line' in a or 'area' in a]
     stage = 'nodes'
 
+    def stamp(a):
+        """Время правки — дата проверки или заметки: по нему карточка пишет, насколько сведения свежие."""
+        day = a.get('tags', {}).get('check_date') or a.get('tags', {}).get('yoobi:note', '').split('|')[-1]
+        try:
+            return dt.datetime.fromisoformat(day[:10]).replace(tzinfo=dt.timezone.utc)
+        except ValueError:
+            return now
+
     def add_nodes():
         nid = ADD_NODE_BASE
         for a in nodes:
-            w.add_node(Node(id=nid, location=(a['lon'], a['lat']), tags=a.get('tags', {}), version=1))
+            w.add_node(Node(id=nid, location=(a['lon'], a['lat']), tags=a.get('tags', {}), version=1,
+                            timestamp=stamp(a)))
             nid += 1
         for a in shapes:
             coords = a.get('line') or a.get('area')
             for lon, lat in coords:
-                w.add_node(Node(id=nid, location=(lon, lat), version=1))
+                w.add_node(Node(id=nid, location=(lon, lat), version=1, timestamp=stamp(a)))
                 nid += 1
 
     def add_ways():
@@ -79,7 +103,7 @@ def apply(src, dst, corr):
             nid += len(coords)
             if 'area' in a and ids[0] != ids[-1]:
                 ids.append(ids[0])
-            w.add_way(Way(id=wid, nodes=ids, tags=a.get('tags', {}), version=1))
+            w.add_way(Way(id=wid, nodes=ids, tags=a.get('tags', {}), version=1, timestamp=stamp(a)))
             wid += 1
 
     def fixed(o, key):
@@ -90,11 +114,16 @@ def apply(src, dst, corr):
         change = corr['change'].get(key)
         if not change:
             return o
-        tags, drop = change
+        tags, drop, where = (*change, None)[:3]
         applied += 1
         new = {t.k: t.v for t in o.tags if t.k not in drop}
         new.update(tags)
-        return o.replace(tags=new)
+        extra = {}
+        if where and o.is_node():
+            extra['location'] = (float(where[0]), float(where[1]))
+        if tags.get('check_date'):  # проверено на месте — сведения свежие
+            extra['timestamp'] = stamp({'tags': tags})
+        return o.replace(tags=new, **extra)
 
     for o in osmium.FileProcessor(src):
         if stage == 'nodes' and not o.is_node():

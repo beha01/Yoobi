@@ -14,6 +14,7 @@ const THEME = {
     crowns: [['#AEDC86', '#7DBD5A', '#5C9D42'], ['#B8E190', '#89C563', '#68A949'], ['#A2D47C', '#71B050', '#52903A']],
     crownShadow: '#2f5a22', crownShadowOpacity: 0.3, park: '#4B9A3A', oneway: '#8E98A5', signals: '#2F3338',
     liftPost: '#4E5560', liftStripe: '#E0433F',
+    siteBg: '#F7E9D6', siteStripe: '#EAC495',
   },
   dark: {
     shadow: '#000000', shadowOpacity: 0.45, plate: '#2A303A', plateStroke: '#4A5260', door: '#C9B8A4',
@@ -22,6 +23,7 @@ const THEME = {
     crowns: [['#4E8C54', '#35703D', '#244F2C'], ['#559459', '#3A7742', '#27552F'], ['#48854E', '#306937', '#204828']],
     crownShadow: '#000000', crownShadowOpacity: 0.45, park: '#2F6B38', oneway: '#8A94A3', signals: '#15181D',
     liftPost: '#AEB5BF', liftStripe: '#E0433F',
+    siteBg: '#2C2821', siteStripe: '#4F3F2A',
   },
 };
 let T = THEME.light;
@@ -165,6 +167,15 @@ function liftGate() {
   };
 }
 
+// Узор стройки: косая штриховка на светлом песочном фоне; плитка 16×16 стыкуется без швов.
+function constructionPattern() {
+  return {
+    width: 16, height: 16,
+    body: `<rect width="16" height="16" fill="${T.siteBg}"/>
+      <path d="M-4 4 4-4M0 16 16 0M12 20 20 12" stroke="${T.siteStripe}" stroke-width="2.4" stroke-linecap="square"/>`,
+  };
+}
+
 // Маленький круглый значок для мелочей: ворота, лавочки, фонтаны, туалеты, вода.
 function smallBadge(color, icon) {
   return {
@@ -197,6 +208,7 @@ export function spriteImages(theme = 'light') {
   images.fountain = smallBadge('#3F8FD8', 'fountain');
   images.toilets = smallBadge('#6E7D95', 'wc');
   images.water = smallBadge('#35A3DC', 'drop');
+  images['pattern-construction'] = constructionPattern();
   return images;
 }
 

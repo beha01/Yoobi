@@ -120,6 +120,15 @@ fi
 if [[ "${UPDATE_OSM:-1}" == 1 ]]; then
   "$PY" scripts/update-osm.py "$PBF" || echo "Правки OSM после выгрузки не скачаны — сборка по суточной выгрузке" >&2
 fi
+# Открытые заметки пользователей OSM (Organic Maps, CoMaps, MAPS.ME…): закрытые и снесённые
+# места убираются, новые — добавляются с пометкой (scripts/notes.py). NOTES=0 — без них.
+if [[ "${NOTES:-1}" == 1 ]]; then
+  if "$PY" scripts/notes.py data/sources/osm-notes.json.tmp; then
+    mv data/sources/osm-notes.json.tmp data/sources/osm-notes.json
+  else
+    echo "Заметки OSM не скачаны — сборка без них" >&2
+  fi
+fi
 # Организации Overture Maps: из мировой базы читаются только куски, покрывающие страну
 # (~50 МБ). Если сеть до S3 недоступна, сборка продолжается без них.
 OVERTURE_ARGS=()
@@ -149,6 +158,9 @@ fetch_buildings() {
 }
 run_extras() {
   local args=(${OVERTURE_ARGS[@]+"${OVERTURE_ARGS[@]}"})
+  [[ "${NOTES:-1}" == 1 ]] || args+=(--notes=)
+  # Сообщения курьеров с карты (src/reports.js), выгруженные из хранилища проекта.
+  [[ -n "${REPORTS:-}" ]] && args+=(--reports="$REPORTS")
   [[ "${OVERTURE:-1}" == 1 && -f data/sources/overture-buildings.jsonl ]] && args+=(--buildings=data/sources/overture-buildings.jsonl)
   rm -f data/extras.osm.pbf
   "$PY" scripts/extras.py "$PBF" data/extras.osm.pbf "data/$AREA-mask.geojson" "data/$AREA-clipped.osm.pbf" \

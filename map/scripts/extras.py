@@ -61,7 +61,9 @@ import osmium
 from osmium.osm.mutable import Node, Way
 
 import corrections
-from landmarks import Landmarks
+import notes
+import reports
+from landmarks import Landmarks, polylabel
 from places import StreetIndex, address_names, house_number, merge_overture, ru_street, tidy
 
 COUNTRY = 'TJ'
@@ -304,12 +306,13 @@ def is_label_key(key):
     return key.startswith('name') or '_name' in key or key.startswith('addr:')
 
 
-def write_clipped(src, dst, country, new_buildings=(), overrides=None):
+def write_clipped(src, dst, country, new_buildings=(), overrides=None, tints=None, sites=None):
     """Копия выгрузки без подписей соседних стран (см. описание модуля).
 
     Точки за границей теряют все теги (кроме вершин гор у самой границы, например
     пика Ленина), линии и отношения целиком за границей — названия и адреса.
-    overrides — новые теги линий и отношений: {('w'|'r', id): теги} (landmarks.py)."""
+    overrides — новые теги линий и отношений: {('w'|'r', id): теги} (landmarks.py);
+    tints — цвет зданий по назначению {('w'|'r', id): '#…'}, sites — участки для новых зданий."""
     reader = osmium.io.Reader(src, osmium.osm.osm_entity_bits.NOTHING)
     header = reader.header()  # в заголовке — рамка выгрузки, по ней Planetiler выбирает тайлы
     reader.close()
@@ -317,12 +320,19 @@ def write_clipped(src, dst, country, new_buildings=(), overrides=None):
     outside_ways = set()
     cleaned = 0
     overrides = overrides or {}
+    tints = tints or {}
 
     def fixed(o):
         """Номер дома в одном виде: «32\\1» → «32/1»; вместо номера — название («Кафе Сахо») → убрать.
         Плюс новые теги из overrides."""
-        over = None if o.is_node() else overrides.get(('w' if o.is_way() else 'r', o.id))
+        key = None if o.is_node() else ('w' if o.is_way() else 'r', o.id)
+        over = overrides.get(key) if key else None
         tags = dict(over) if over is not None else None
+        tint = tints.get(key) if key else None
+        if tint and 'building:colour' not in (tags if tags is not None else o.tags):
+            if tags is None:
+                tags = {t.k: t.v for t in o.tags}
+            tags['building:colour'] = tint
         value = (tags if tags is not None else o.tags).get('addr:housenumber')
         if value is not None:
             number = house_number(value)
@@ -350,6 +360,9 @@ def write_clipped(src, dst, country, new_buildings=(), overrides=None):
             ids = list(range(nid, nid + len(ring)))
             nid += len(ring)
             tags = {'building': 'yes', 'source': 'Overture Maps (ML)'}
+            kind = sites.at(*to_xy(*ring[0])) if sites and sites.items else None
+            if kind:
+                tags['building:colour'] = TINTS[kind]
             if height:
                 tags['height'] = f'{height:g}'
             if floors:
@@ -405,6 +418,80 @@ def write_clipped(src, dst, country, new_buildings=(), overrides=None):
 
 # ——— Первый проход: природа ———
 
+# Цвет здания по назначению, как в городских справочниках: школы, больницы, госучреждения,
+# мечети, торговые центры, заводы и стройки отличаются от жилых домов. Цвет пишется в
+# building:colour только домам без своего цвета фасада; стиль (src/style.js, BUILDING_TINTS)
+# узнаёт эти значения и красит их в тон каждой темы.
+TINTS = {'edu': '#f3e3b5', 'health': '#f4d3d0', 'gov': '#d9deea', 'worship': '#d4e7da', 'shop': '#e9ddee',
+         'industry': '#e1ded9', 'construction': '#f3dec3'}
+
+
+def building_function(t):
+    b = t.get('building')
+    a = t.get('amenity')
+    if b == 'construction' or (t.get('construction') and b in (None, 'yes')):
+        return 'construction'
+    if b in ('school', 'kindergarten', 'university', 'college') or a in ('school', 'kindergarten', 'university',
+                                                                        'college'):
+        return 'edu'
+    if b == 'hospital' or a in ('hospital', 'clinic') or t.get('healthcare') in ('hospital', 'clinic', 'centre'):
+        return 'health'
+    if b in ('mosque', 'church', 'cathedral', 'chapel', 'temple', 'synagogue', 'religious') or a == 'place_of_worship':
+        return 'worship'
+    if b in ('government', 'public', 'civic') or t.get('office') == 'government' or a in (
+            'townhall', 'courthouse', 'police', 'embassy', 'fire_station'):
+        return 'gov'
+    if b in ('commercial', 'retail', 'supermarket', 'office') or t.get('shop') in ('mall', 'supermarket',
+                                                                                  'department_store'):
+        return 'shop'
+    if b in ('industrial', 'warehouse', 'factory', 'manufacture', 'hangar'):
+        return 'industry'
+    return None
+
+
+def site_function(t):
+    """Участок, дома на котором красятся по его назначению: школа, больница, стройка."""
+    if t.get('landuse') == 'construction' or t.get('construction') and 'landuse' in t:
+        return 'construction'
+    a = t.get('amenity')
+    if a in ('school', 'kindergarten', 'university', 'college'):
+        return 'edu'
+    if a in ('hospital', 'clinic') or t.get('healthcare') == 'hospital':
+        return 'health'
+    if a == 'place_of_worship':
+        return 'worship'
+    if a in ('townhall', 'courthouse') or t.get('shop') == 'mall':
+        return 'gov' if a else 'shop'
+    return None
+
+
+class Sites:
+    """Участки по назначению (кольца в метрах) с быстрым поиском участка под точкой."""
+
+    def __init__(self):
+        self.items = []  # (вид, кольцо xy, рамка, кольцо lon/lat, название)
+        self.grid = Grid(200.0)
+
+    def add(self, kind, lonlat, name=''):
+        ring = [to_xy(*p) for p in lonlat]
+        box = bbox([ring])
+        self.items.append((kind, ring, box, lonlat, name))
+        self.grid.add_bbox(len(self.items) - 1, *box)
+
+    def at(self, x, y):
+        best = None
+        for i in self.grid.near(x, y):
+            kind, ring, box, _ll, _n = self.items[i]
+            if box[0] <= x <= box[2] and box[1] <= y <= box[3] and point_in_ring(x, y, ring):
+                area = (box[2] - box[0]) * (box[3] - box[1])
+                if best is None or area < best[0]:  # вложенные: школа внутри жилого квартала
+                    best = (area, kind)
+        return best[1] if best else None
+
+    def construction(self):
+        return [(ll, name) for kind, _r, _b, ll, name in self.items if kind == 'construction']
+
+
 class Nature:
     def __init__(self):
         self.places = []      # (класс, x, y)
@@ -414,6 +501,7 @@ class Nature:
         self.water = []       # кольца
         self.entrances = {}   # id точки -> (lon, lat, теги)
         self.country = []     # кольца границы страны (lon, lat)
+        self.sites = Sites()  # школы, больницы, стройки… — для цвета домов на них
 
 
 def read_nature(path, landmarks):
@@ -421,7 +509,7 @@ def read_nature(path, landmarks):
     fp = (osmium.FileProcessor(path)
           .with_locations()
           .with_areas(osmium.filter.KeyFilter('natural', 'landuse', 'leisure', 'waterway', 'boundary', 'amenity',
-                                              'man_made', 'historic'))
+                                              'man_made', 'historic', 'healthcare', 'shop'))
           .with_filter(osmium.filter.KeyFilter('place', 'natural', 'landuse', 'leisure', 'waterway',
                                                'boundary', 'entrance', 'amenity', 'man_made', 'historic')))
     for o in fp:
@@ -443,6 +531,13 @@ def read_nature(path, landmarks):
                     pass
         elif o.is_area():
             landmarks.area(o)
+            site = site_function(t) if 'building' not in t else None
+            if site:
+                for outer in o.outer_rings():
+                    try:
+                        d.sites.add(site, [(n.lon, n.lat) for n in outer][:-1], t.get('name:ru') or t.get('name', ''))
+                    except osmium.InvalidLocationError:
+                        pass
             kind = None
             if t.get('landuse') == 'orchard':
                 kind = 'orchard'
@@ -610,10 +705,23 @@ def is_poi(t):
             or t.get('aeroway') == 'aerodrome')
 
 
-def poi_details(t):
-    """Тип места (значение OSM: cafe, pharmacy…) и сведения для карточки: часы, телефон, сайт, адрес."""
+def poi_details(t, stamp=None):
+    """Тип места (значение OSM: cafe, pharmacy…) и сведения для карточки: часы, телефон, сайт, адрес,
+    когда место последний раз правили и откуда оно, если не из OSM."""
     kind = next((t[k] if t[k] != 'yes' else k for k in POI_TYPE_KEYS if k in t), '')
     info = {}
+    if stamp and stamp.year > 2000:
+        info['up'] = stamp.strftime('%Y-%m-%d')  # «сведения от …»: курьеру видно, насколько они свежие
+    if t.get('check_date'):
+        info['chk'] = t['check_date'][:10]
+    if t.get('yoobi:note'):
+        info['nt'] = t['yoobi:note'].split('|')[-1]  # по заметке пользователя OSM, не проверено
+    if t.get('yoobi:report'):
+        info['rp'] = t['yoobi:report'].split('|')[-1]  # по сообщению пользователя карты, не проверено
+    if t.get('yoobi:approx'):
+        info['ap'] = t['yoobi:approx']  # место примерное (известен только адрес), метры
+    if t.get('start_date'):
+        info['since'] = t['start_date'][:10]
     for key, tags in (('hours', ('opening_hours',)), ('phone', ('phone', 'contact:phone')),
                       ('site', ('website', 'contact:website', 'url')), ('insta', ('contact:instagram',))):
         v = next((t[k] for k in tags if t.get(k)), None)
@@ -807,7 +915,7 @@ class Details:
             if t.get('place') in ('city', 'town', 'village', 'hamlet', 'suburb', 'quarter', 'neighbourhood'):
                 self.search.places.append((t['place'], lon, lat, Search.names(t)))
             elif is_poi(t):
-                self.search.pois.append((lon, lat, Search.names(t), poi_category(t), *poi_details(t)))
+                self.search.pois.append((lon, lat, Search.names(t), poi_category(t), *poi_details(t, o.timestamp)))
         if 'addr:housenumber' in t:
             add_address(self.search.addresses, lon, lat, t)
         if 'name' in t and (t.get('highway') == 'bus_stop' or t.get('public_transport') == 'platform'
@@ -850,7 +958,7 @@ class Details:
             self.points.append((lon, lat, 'parking', t.get('name', '')))
         if 'name' in t:
             if is_poi(t):
-                self.search.pois.append((lon, lat, Search.names(t), poi_category(t), *poi_details(t)))
+                self.search.pois.append((lon, lat, Search.names(t), poi_category(t), *poi_details(t, o.timestamp)))
             elif 'building' in t:
                 self.labels.append((lon, lat, Search.names(t), ring_area(ring)))
         if 'building' in t and 'addr:housenumber' in t:
@@ -885,6 +993,7 @@ class Obstacles:
         self.node_use = defaultdict(int)
         self.entrance_out = []  # (lon, lat, угол, теги)
         self.boxes = defaultdict(list)  # клетка 100 м -> рамки всех домов OSM
+        self.tints = {}                 # ('w'|'r', id) -> цвет по назначению (TINTS)
 
     def add_box(self, box):
         """Рамка дома OSM в сетке 100 м — для сверки с новыми зданиями Overture."""
@@ -943,7 +1052,7 @@ def read_routes(path):
     return stops
 
 
-def read_obstacles(path, active, entrances, details, landmarks):
+def read_obstacles(path, active, entrances, details, landmarks, sites=None):
     """Второй проход: дома и дороги (для посадки деревьев и подъездов) и городские детали."""
     ob = Obstacles()
 
@@ -987,6 +1096,16 @@ def read_obstacles(path, active, entrances, details, landmarks):
         elif o.is_area():
             if 'building' in t:
                 landmarks.building(o)
+                if 'building:colour' not in t and 'building:material' not in t and t.get('building') != 'no':
+                    kind = building_function(t)
+                    if not kind and sites and sites.items:
+                        try:
+                            ring = next(iter(o.outer_rings()))
+                            kind = sites.at(*to_xy(*centroid([(n.lon, n.lat) for n in ring][:-1])))
+                        except (StopIteration, osmium.InvalidLocationError, ZeroDivisionError):
+                            kind = None
+                    if kind:
+                        ob.tints[('w' if o.from_way() else 'r', o.orig_id())] = TINTS[kind]
             field = t.get('leisure') in ('pitch', 'stadium', 'track')
             for i, outer in enumerate(o.outer_rings()):
                 try:
@@ -1180,7 +1299,7 @@ def outline(coords, width):
     return left + right[::-1] + [left[0]]
 
 
-def write(dst, trees, entrances, details, rnd, landmarks=None):
+def write(dst, trees, entrances, details, rnd, landmarks=None, construction=()):
     """Сначала все точки, потом линии. Дерево — одна точка с диаметром кроны и оттенком:
     стиль рисует гладкую круглую крону нужного размера в метрах (как в 2ГИС)."""
     w = osmium.SimpleWriter(dst, overwrite=True)
@@ -1212,6 +1331,13 @@ def write(dst, trees, entrances, details, rnd, landmarks=None):
         if ring:
             ids = [node(*p) for p in ring[:-1]]
             shapes.append((ids + [ids[0]], {'yoobi': 'barrier', 'kind': kind, 'height': f'{height:.1f}'}))
+    # Стройки: участок (штриховка) и подпись в середине — где идёт стройка, видно сразу.
+    for ring, name in construction:
+        if len(ring) > 2:
+            ids = [node(*p) for p in ring]
+            shapes.append((ids + [ids[0]], {'yoobi': 'site', 'kind': 'construction'}))
+            x, y, _d = polylabel([[to_xy(*p) for p in ring]])
+            node(*to_lonlat(x, y), {'yoobi': 'site_label', 'kind': 'construction', **({'name': name} if name else {})})
     for ring, name in details.parkings:
         if len(ring) > 3 and ring[0] == ring[-1]:
             ids = [node(*p) for p in ring[:-1]]
@@ -1293,15 +1419,29 @@ def header_latitude(path):
 
 
 CORRECTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tiles', 'corrections.json')
+NOTES = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'sources', 'osm-notes.json')
+REPORTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'sources', 'reports.json')
 
 
 def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path=None, buildings_path=None,
-         corrections_path=CORRECTIONS):
-    # Правки владельца карты (tiles/corrections.json) — до всех проходов: они попадут везде.
-    fixes = corrections.load(corrections_path) if corrections_path else None
+         corrections_path=CORRECTIONS, notes_path=NOTES, reports_path=REPORTS):
+    # Правки до всех проходов, чтобы попали везде: заметки пользователей OSM о закрытых и
+    # новых местах (scripts/notes.py), сообщения курьеров с карты (scripts/reports.py) и
+    # правки владельца (tiles/corrections.json) — при споре важнее последние.
+    owner = corrections.load(corrections_path) if corrections_path else None
+    combined = None
+    if notes_path and os.path.exists(notes_path):
+        combined, stats = notes.corrections(src, notes_path)
+        print('заметки OSM: ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
+    sent = reports.load(reports_path) if reports_path else []
+    if sent:
+        from_reports, stats = reports.corrections(src, sent)
+        print(f'сообщения с карты ({len(sent)}): ' + ', '.join(f'{k}: {v}' for k, v in stats.items() if v))
+        combined = notes.merge(from_reports, combined) if combined else from_reports
+    fixes = notes.merge(owner, combined) if combined else owner
     if fixes:
         fixed_src = os.path.join(os.path.dirname(os.path.abspath(dst)), 'corrected.osm.pbf')
-        print(f'правки владельца карты: {corrections.apply(src, fixed_src, fixes)} ({corrections_path})')
+        print(f'правок применено: {corrections.apply(src, fixed_src, fixes)} (владелец — {corrections_path})')
         src = fixed_src
     set_projection(header_latitude(src))
     rnd = random.Random(7)
@@ -1330,7 +1470,7 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
     details = Details()
     details.search.routes = read_routes(src)
     details.search.dates = data_dates(src, overture_path)
-    ob = read_obstacles(src, active, nature.entrances, details, landmarks)
+    ob = read_obstacles(src, active, nature.entrances, details, landmarks, nature.sites)
     landmarks.build_stadiums()
     for box in landmarks.covered:  # ML-контуры трибун не нужны: трибуны строятся сами
         ob.add_box(box)
@@ -1346,13 +1486,14 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
         print(f'Overture: {len(records)} мест, ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
     landmarks.build_mosques(new_buildings)
     landmarks.build_monuments()
+    landmarks.build_special()
     print('ориентиры: ' + ', '.join(f'{k}: {v}' for k, v in landmarks.stats.items()))
     trees = plant(nature, plans, ob, places, rnd)
     # Подъезды не на контуре здания — без направления.
     entrances = ob.entrance_out + [(lon, lat, None, tags) for lon, lat, tags in nature.entrances.values()]
     details.search.entrances = [(lon, lat, tags.get('ref', ''), tags.get('addr:flats', ''))
                                 for lon, lat, _angle, tags in entrances]
-    write(dst, trees, entrances, details, rnd, landmarks)
+    write(dst, trees, entrances, details, rnd, landmarks, nature.sites.construction())
     write_mask(mask_path, nature.country)
     per_tile = defaultdict(int)
     for x, y, *_ in trees:
@@ -1374,7 +1515,8 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
     if clipped_path:
         if not nature.country:
             print(f'Границы {COUNTRY} в выгрузке нет — подписи соседей не убираются', file=sys.stderr)
-        cleaned = write_clipped(src, clipped_path, country, new_buildings, landmarks.overrides)
+        cleaned = write_clipped(src, clipped_path, country, new_buildings, landmarks.overrides, ob.tints, nature.sites)
+        print(f'цвет по назначению: {len(ob.tints)} зданий OSM, строек: {len(nature.sites.construction())}')
         print(f'выгрузка без подписей соседних стран: {clipped_path} (очищено объектов: {cleaned})')
 
 
@@ -1383,4 +1525,5 @@ if __name__ == '__main__':
     opts = dict(a[2:].split('=', 1) for a in sys.argv[1:] if a.startswith('--') and '=' in a)
     main(*[a for a in sys.argv[1:] if not a.startswith('--')][:4], search_path=opts.get('search'),
          overture_path=opts.get('overture'), buildings_path=opts.get('buildings'),
-         corrections_path=opts.get('corrections', CORRECTIONS))
+         corrections_path=opts.get('corrections', CORRECTIONS), notes_path=opts.get('notes', NOTES),
+         reports_path=opts.get('reports', REPORTS))

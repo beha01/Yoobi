@@ -467,6 +467,9 @@ def merge_overture(records, pois, addresses, contains, to_xy):
         if not cat or r['confidence'] < MIN_CONFIDENCE or not r['name'].strip():
             stats['отброшено'] += 1
             continue
+        if r.get('status') == 'permanently_closed':
+            stats['закрыто навсегда'] += 1
+            continue
         lon, lat = r['lon'], r['lat']
         approx = counts[(round(lon, 4), round(lat, 4))] >= CLUSTER
         if approx:
@@ -490,6 +493,10 @@ def merge_overture(records, pois, addresses, contains, to_xy):
             info['addr'] = ' '.join(free.split()).strip(' ,')[:100]
         if r['address'].get('postcode'):
             info['pc'] = r['address']['postcode']
+        if r.get('updated'):
+            info['up'] = r['updated']
+        if r.get('status') == 'temporarily_closed':
+            info['tc'] = 1
         # То же место уже есть в OSM — дополняем его контактами.
         x, y = to_xy(lon, lat)
         radius = 15000 if approx else SAME_RADIUS

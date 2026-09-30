@@ -14,6 +14,11 @@ on:
       - 'map/scripts/extras.py'
       - 'map/scripts/places.py'
       - 'map/scripts/overture.py'
+      - 'map/scripts/landmarks.py'
+      - 'map/scripts/corrections.py'
+      - 'map/scripts/notes.py'
+      - 'map/scripts/reports.py'
+      - 'map/scripts/update-osm.py'
       - 'map/tiles/**'
       - '.github/workflows/map-data.yml'
 
