@@ -45,7 +45,7 @@ export function mapOptions(overrides = {}) {
   return {
     ...DUSHANBE_VIEW,
     maxBounds: TAJIKISTAN_BOUNDS,
-    minZoom: 5,
+    minZoom: 4, // на телефоне вся страна помещается примерно на 4,3 зуме
     maxZoom: 19,
     maxPitch: 70,
     // На экранах 3x рисуем в 2x: картинка почти та же, а пикселей вдвое меньше.

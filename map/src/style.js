@@ -27,6 +27,7 @@ export const DEFAULTS = {
   sprite: null,
   // Рельеф (AWS Terrain Tiles, формат terrarium). null — без рельефа.
   dem: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
+  demMaxzoom: 12, // до какого зума есть тайлы высот (дальше растягиваются)
   hillshade: true,
   terrain: false, // число — объёмный рельеф с этим преувеличением, например 1.3
   buildings3d: true,
@@ -332,7 +333,7 @@ export function buildStyle(options = {}) {
     tiles: [o.dem],
     encoding: 'terrarium',
     tileSize: 256,
-    maxzoom: 12,
+    maxzoom: o.demMaxzoom,
     attribution: '<a href="https://registry.opendata.aws/terrain-tiles/" target="_blank">Рельеф: Terrain Tiles</a>',
   });
   if (o.locked) {
