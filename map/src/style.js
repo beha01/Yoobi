@@ -109,7 +109,7 @@ function landcoverColor(park) {
   return ['match', ['get', 'class'],
     'wood', C.wood,
     'grass', ['match', ['get', 'subclass'], ['park', 'garden', 'village_green', 'recreation_ground'], park, C.grass],
-    'farmland', C.farmland,
+    'farmland', ['match', ['get', 'subclass'], 'orchard', '#C6E0A0', 'vineyard', '#D7E5AE', C.farmland],
     'sand', C.sand,
     'rock', C.rock,
     'ice', C.ice,

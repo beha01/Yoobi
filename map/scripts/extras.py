@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Готовит данные для дополнительных тайлов Yoobi Map из выгрузки OpenStreetMap.
 
-  python3 scripts/extras.py data/sources/tajikistan.osm.pbf data/extras.osm.pbf data/tajikistan-mask.geojson
+  python3 scripts/extras.py data/sources/tajikistan.osm.pbf data/extras.osm.pbf data/tajikistan-mask.geojson [--decor]
 
 Что получается (дальше Planetiler режет это в тайлы по схеме tiles/extra.yml):
 
@@ -35,9 +35,13 @@ STREET_CLASSES = {  # полуширина проезжей части, м
 ROAD_CLASSES = set(STREET_CLASSES) | {'motorway', 'trunk', 'motorway_link', 'trunk_link', 'primary_link',
                                       'secondary_link', 'tertiary_link', 'service'}
 PATH_CLASSES = {'footway', 'path', 'cycleway', 'steps', 'pedestrian', 'track'}
-PARK_TAGS = [('leisure', 'park'), ('leisure', 'garden'), ('landuse', 'forest'), ('natural', 'wood'),
-             ('landuse', 'village_green')]
-URBAN_RADIUS = {'city': 9000, 'town': 3500}
+PARK_TAGS = [('leisure', 'park'), ('leisure', 'garden'), ('landuse', 'village_green')]
+WOOD_TAGS = [('landuse', 'forest'), ('natural', 'wood')]
+ORCHARD_TAGS = [('landuse', 'orchard')]
+# Декоративные посадки (вдоль улиц и в парках без отмеченных деревьев) — выдумка,
+# поэтому по умолчанию выключены: на карте только то, что есть в OSM.
+DECOR = '--decor' in sys.argv
+URBAN_RADIUS = {'city': 25000, 'town': 12000, 'village': 3000}
 STREET_SPACING, PARK_SPACING = 12.0, 13.0
 CELL = 60.0
 
@@ -105,6 +109,8 @@ class Collector(osmium.SimpleHandler):
         self.entrance_out = []    # (lon, lat, angle, tags)
         self.buildings = []       # [(lon, lat)] внешний контур
         self.parks = []           # (outer [(lon, lat)], inners)
+        self.woods = []           # леса и рощи — деревья там есть на самом деле
+        self.orchards = []        # сады — ряды невысоких деревьев
         self.water = []
         self.country = []         # кольца границы страны
 
@@ -174,6 +180,10 @@ class Collector(osmium.SimpleHandler):
             self.buildings.extend(o for o, _ in rings)
         elif any(t.get(k) == v for k, v in PARK_TAGS):
             self.parks.extend(rings)
+        elif any(t.get(k) == v for k, v in WOOD_TAGS):
+            self.woods.extend(rings)
+        elif any(t.get(k) == v for k, v in ORCHARD_TAGS):
+            self.orchards.extend(rings)
         elif t.get('natural') == 'water':
             self.water.extend(rings)
         if (t.get('boundary') == 'administrative' and t.get('admin_level') == '2'
@@ -246,9 +256,32 @@ def main(src, dst, mask_path):
     def near_real(x, y, d):
         return any(math.hypot(x - trees[i][0], y - trees[i][1]) < d for i in real.near(x, y))
 
-    # Декоративные ряды вдоль городских улиц.
+    def fill(rings, spacing, keep, crown_range, height_range, decor, jitter=3.0):
+        for outer, inners in rings:
+            xy = [P(*p) for p in outer]
+            if not is_urban(*xy[0]):
+                continue
+            hxy = [[P(*p) for p in h] for h in inners]
+            xs, ys = [p[0] for p in xy], [p[1] for p in xy]
+            yy = min(ys)
+            while yy < max(ys):
+                xx = min(xs)
+                while xx < max(xs):
+                    x, y = xx + rnd.uniform(-jitter, jitter), yy + rnd.uniform(-jitter, jitter)
+                    if rnd.random() < keep and point_in_ring(x, y, xy) and not any(point_in_ring(x, y, h) for h in hxy):
+                        crown = rnd.uniform(*crown_range)
+                        if free(x, y, crown) and not near_real(x, y, crown):
+                            trees.append((x, y, crown, rnd.uniform(*height_range), decor))
+                    xx += spacing
+                yy += spacing
+
+    # Леса и рощи в OSM — сплошь деревья; сады — ровные ряды невысоких деревьев.
+    fill(c.woods, 8.0, 0.9, (6.0, 9.0), (10, 16), False)
+    fill(c.orchards, 6.0, 0.95, (3.5, 4.5), (3.5, 5.0), False, jitter=0.4)
+
+    # Декоративные ряды вдоль городских улиц (только с --decor).
     junction = {nid for nid, k in c.node_use.items() if k > 1}
-    for cls, coords, ids in c.streets:
+    for cls, coords, ids in (c.streets if DECOR else []):
         if cls.startswith('_'):
             continue
         xy = [P(*p) for p in coords]
@@ -264,24 +297,9 @@ def main(src, dst, mask_path):
                 if free(x, y, crown) and not near_real(x, y, 7):
                     trees.append((x, y, crown, rnd.uniform(8, 12), True))
 
-    # Посадки в городских парках.
-    for outer, inners in c.parks:
-        xy = [P(*p) for p in outer]
-        if not is_urban(*xy[0]):
-            continue
-        hxy = [[P(*p) for p in h] for h in inners]
-        xs, ys = [p[0] for p in xy], [p[1] for p in xy]
-        yy = min(ys)
-        while yy < max(ys):
-            xx = min(xs)
-            while xx < max(xs):
-                x, y = xx + rnd.uniform(-3, 3), yy + rnd.uniform(-3, 3)
-                if rnd.random() < 0.8 and point_in_ring(x, y, xy) and not any(point_in_ring(x, y, h) for h in hxy):
-                    crown = rnd.uniform(5.5, 8.5)
-                    if free(x, y, crown) and not near_real(x, y, 8):
-                        trees.append((x, y, crown, rnd.uniform(8, 13), True))
-                xx += PARK_SPACING
-            yy += PARK_SPACING
+    # Посадки в городских парках без отмеченных деревьев (только с --decor).
+    if DECOR:
+        fill(c.parks, PARK_SPACING, 0.8, (5.5, 8.5), (8, 13), True)
 
     # Подъезды не на контуре здания — без направления.
     for lon, lat, tags in c.entrances.values():
@@ -380,4 +398,4 @@ def simplify(points, tol):
 
 if __name__ == '__main__':
     sys.setrecursionlimit(100000)
-    main(*sys.argv[1:4])
+    main(*[a for a in sys.argv[1:] if not a.startswith('--')][:3])
