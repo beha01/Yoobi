@@ -27,6 +27,9 @@ export const ICONS = {
 };
 
 // Порядок важен: подкатегории-исключения (например, «mall») проверяются раньше классов.
+// landmark: true — «знаковые» места (госучреждения, вузы, культура, мечети):
+// значок над зданием и подпись в плашке под ним. Остальные — значок слева от
+// названия в белой «таблетке».
 export const CATEGORIES = [
   {
     id: 'food', label: 'Рестораны', color: '#F7931E', icon: 'restaurant',
@@ -64,22 +67,23 @@ export const CATEGORIES = [
     classes: ['fuel'],
   },
   {
-    id: 'edu', label: 'Образование', color: '#5C6B82', icon: 'school',
+    id: 'edu', label: 'Образование', color: '#56657C', icon: 'school', landmark: true,
     classes: ['college', 'school', 'kindergarten', 'library'],
     icons: { library: 'book' },
   },
   {
-    id: 'culture', label: 'Культура и досуг', color: '#8E44AD', icon: 'star',
+    id: 'culture', label: 'Культура и досуг', color: '#7B5EA7', icon: 'star', landmark: true,
     classes: ['museum', 'theatre', 'cinema', 'art_gallery', 'attraction', 'monument',
       'memorial', 'castle', 'zoo', 'stadium'],
     icons: { theatre: 'theater', cinema: 'theater' },
   },
   {
-    id: 'gov', label: 'Госучреждения', color: '#546E7A', icon: 'landmark',
+    id: 'gov', label: 'Госучреждения', color: '#4F5D73', icon: 'landmark', landmark: true,
+    subclasses: ['government'],
     classes: ['town_hall', 'police', 'post', 'fire_station', 'embassy'],
   },
   {
-    id: 'worship', label: 'Мечети и храмы', color: '#16A085', icon: 'mosque',
+    id: 'worship', label: 'Мечети и храмы', color: '#16A085', icon: 'mosque', landmark: true,
     classes: ['place_of_worship'],
   },
   {
@@ -98,8 +102,11 @@ export const CATEGORY_BY_ID = Object.fromEntries(
   [...CATEGORIES, OTHER, AIRPORT].map((c) => [c.id, c]),
 );
 
-// Классы, которые рисуются не значками (парки — зелёной подписью) или не нужны вовсе.
-export const HIDDEN_CLASSES = ['park', 'entrance', 'harbor', 'golf', 'campsite', 'cemetery', 'swimming'];
+export const LANDMARK_CATEGORIES = CATEGORIES.filter((c) => c.landmark).map((c) => c.id);
+
+// Классы, которые рисуются не значками (парки и сады — зелёной подписью) или не нужны.
+export const HIDDEN_CLASSES = ['park', 'garden', 'entrance', 'harbor', 'golf', 'campsite',
+  'cemetery', 'swimming', 'playground'];
 
 // Мелкие объекты, которые показываются только на самых крупных масштабах.
 export const MINOR_SUBCLASSES = ['bus_stop', 'tram_stop'];
@@ -127,7 +134,9 @@ export const SUBCLASS_RU = {
   castle: 'Крепость', ruins: 'Руины', zoo: 'Зоопарк', stadium: 'Стадион',
   townhall: 'Администрация', public_building: 'Общественное здание', courthouse: 'Суд',
   community_centre: 'Дом культуры', police: 'Полиция', post_office: 'Почта',
-  fire_station: 'Пожарная часть', embassy: 'Посольство', place_of_worship: 'Место поклонения',
+  fire_station: 'Пожарная часть', embassy: 'Посольство', government: 'Госучреждение',
+  place_of_worship: 'Место поклонения', muslim: 'Мечеть', christian: 'Церковь',
+  garden: 'Сад', parking: 'Парковка',
   park: 'Парк', square: 'Площадь',
   station: 'Вокзал / станция', halt: 'Остановочный пункт', bus_station: 'Автовокзал',
   bus_stop: 'Остановка', tram_stop: 'Трамвайная остановка', subway_entrance: 'Вход в метро',
@@ -150,18 +159,22 @@ export function categoryExpression() {
 }
 
 // Выражение, дающее id картинки из спрайта: `${prefix}-<категория>-<иконка>`.
-// prefix: 'poi' — круглый значок, 'pill' — значок с белой «таблеткой» под подпись.
-export function imageExpression(prefix) {
+// prefix: 'poi' — круглый значок, 'pill' — значок с «таблеткой», 'mark' — значок
+// знакового места с плашкой. only — ограничить выражение этими категориями.
+export function imageExpression(prefix, only = null) {
+  const cats = only ? CATEGORIES.filter((c) => only.includes(c.id)) : CATEGORIES;
+  const fallback = only ? `${prefix}-${cats[0].id}-${cats[0].icon}` : `${prefix}-${OTHER.id}-${OTHER.icon}`;
   const cases = ['case'];
-  for (const c of CATEGORIES) {
+  for (const c of cats) {
     for (const [cls, icon] of Object.entries(c.icons || {})) {
+      // Классы-исключения принадлежат только своей категории, поэтому хватает класса.
       cases.push(['any', ['==', ['get', 'class'], cls], ['==', ['get', 'subclass'], cls]],
         `${prefix}-${c.id}-${icon}`);
     }
   }
   const byCategory = ['match', categoryExpression()];
-  for (const c of CATEGORIES) byCategory.push(c.id, `${prefix}-${c.id}-${c.icon}`);
-  byCategory.push(`${prefix}-${OTHER.id}-${OTHER.icon}`);
+  for (const c of cats) byCategory.push(c.id, `${prefix}-${c.id}-${c.icon}`);
+  byCategory.push(fallback);
   cases.push(byCategory);
   return cases;
 }

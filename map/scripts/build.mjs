@@ -6,7 +6,9 @@
 //                    --tiles=pmtiles://https://cdn.example.com/map/tajikistan.pmtiles \
 //                    --glyphs=https://cdn.example.com/map/fonts/{fontstack}/{range}.pbf
 //
-// Флаги: --no-hillshade, --no-3d, --no-poi, --no-dem, --terrain=1.3
+//   npm run build -- --base-url=… --extra-tiles=pmtiles://https://cdn.example.com/map/tajikistan-extra.pmtiles
+//
+// Флаги: --no-hillshade, --no-3d, --no-poi, --no-trees, --no-dem, --terrain=1.3
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -51,11 +53,13 @@ console.log(`Спрайт: ${Object.keys(layout.placed).length} картинок
 const options = {
   sprite: `${baseUrl}sprites/yoobi`,
   tiles: args.tiles || DEFAULTS.tiles,
+  extraTiles: args['extra-tiles'] || null,
   glyphs: args.glyphs || DEFAULTS.glyphs,
   dem: args.dem === false ? null : args.dem || DEFAULTS.dem,
   hillshade: args.hillshade !== false,
   buildings3d: args['3d'] !== false,
   poi: args.poi !== false,
+  trees: args.trees !== false,
   terrain: args.terrain ? Number(args.terrain) : false,
 };
 await mkdir(join(root, 'styles'), { recursive: true });

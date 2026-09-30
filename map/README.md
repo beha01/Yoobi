@@ -1,9 +1,16 @@
 # Yoobi Map — стиль карты Таджикистана
 
-Светлый «городской» стиль карты для [MapLibre](https://maplibre.org) на открытых данных
-OpenStreetMap. Светлые кварталы, зелёные парки, голубая вода, белые улицы, объёмные
-здания, рельеф гор, номера домов, железные дороги и места с цветными значками
-в белых «таблетках». Подписи на русском, таджикском и английском.
+Стиль карты всего Таджикистана для [MapLibre](https://maplibre.org) на открытых
+данных OpenStreetMap — в духе «живого» 3D-города:
+
+- вблизи: серый асфальт с белыми бордюрами и светлыми тротуарами, ряды деревьев
+  вдоль улиц, сочные парки с кронами и дорожками, светлые объёмные дома, яркая вода;
+- места — цветной значок в белой «таблетке» (кафе, магазины, аптеки, гостиницы…),
+  знаковые здания — значок над домом и подпись в плашке, парки — зелёная плашка;
+- номера домов, подъезды с номерами и квартирами, вокзалы, остановки, аэропорты;
+- издалека — рельеф гор, ледники, реки, города с точками, вершины с высотами, границы.
+
+Подписи на русском, таджикском и английском.
 
 Это только стиль карты, без интерфейса приложения. Его можно перенести в любой
 проект: сайт на чистом JS, React/Vue/Svelte/Angular, Android, iOS, Flutter,
@@ -23,8 +30,8 @@ npm run demo          # http://localhost:8080/demo/
 ```
 
 Демо — это полноэкранная карта без лишнего интерфейса. Параметры задаются в адресе:
-`?lang=tg`, `?category=food`, `?3d=0`, `?poi=0`, `?relief=0`, `?terrain=1.3`,
-`?tiles=pmtiles://…`.
+`?lang=tg`, `?category=food`, `?3d=0`, `?poi=0`, `?trees=0`, `?relief=0`, `?terrain=1.3`,
+`?tiles=pmtiles://…`, `?extra=pmtiles://…` (подъезды и деревья, см. ниже).
 
 ## Подключение в веб-проект
 
@@ -80,12 +87,14 @@ export function TajikMap() {
 |---|---|---|
 | `lang` | `'ru'` | Язык подписей: `'ru'`, `'tg'`, `'en'` (если перевода нет, берётся местное название) |
 | `tiles` | OpenFreeMap | TileJSON-адрес, `pmtiles://…` или массив шаблонов `…/{z}/{x}/{y}.pbf` |
+| `extraTiles` | `null` | Дополнительные тайлы с подъездами и деревьями из OSM (`scripts/build-tiles.sh`) |
 | `glyphs` | шрифты OpenFreeMap | Адрес шрифтов `…/{fontstack}/{range}.pbf` |
 | `sprite` | рядом с пакетом | Абсолютный адрес спрайта без расширения |
 | `dem` | AWS Terrain Tiles | Источник высот для рельефа; `null` — без рельефа |
 | `hillshade` | `true` | Отмывка рельефа (горы на мелких масштабах) |
 | `terrain` | `false` | Объёмные горы; число — коэффициент высоты, например `1.3` |
 | `buildings3d` | `true` | Объёмные здания с 14,5 зума |
+| `trees` | `true` | Ряды деревьев вдоль улиц и кроны в парках и лесах (с 15 зума) |
 | `poi` | `true` | Места со значками |
 | `category` | `null` | Показывать места только одной категории |
 
@@ -99,7 +108,7 @@ import {
 
 setLanguage(map, 'tg');                 // подписи на таджикском
 setPoiCategory(map, 'pharmacy');        // только аптеки; null — все места
-setGroupVisible(map, '3d', false);      // группы: '3d', 'poi', 'hillshade'
+setGroupVisible(map, '3d', false);      // группы: '3d', 'poi', 'hillshade', 'trees', 'entrances'
 
 map.on('click', POI_LAYERS, (e) => {
   const place = describeFeature(e.features[0], 'ru');
@@ -155,19 +164,22 @@ MapLibreMap(styleString: 'https://cdn.example.com/map/styles/yoobi-ru.json', ini
 проекта надёжнее раздавать всё самим: карта не зависит от чужих серверов и не
 упирается в их лимиты.
 
-1. **Тайлы Таджикистана одним файлом** (нужен Docker):
+1. **Тайлы Таджикистана** (нужна Java 21+ или Docker):
    ```bash
-   ./scripts/build-tiles.sh        # → data/tajikistan.pmtiles
+   ./scripts/build-tiles.sh        # → data/tajikistan.pmtiles, data/tajikistan-extra.pmtiles
    ```
    Скрипт скачивает свежую выгрузку OSM с Geofabrik и собирает тайлы через
-   [Planetiler](https://github.com/onthegomap/planetiler) в схеме OpenMapTiles.
-   В тайлы попадают только названия на русском, таджикском и английском, поэтому
-   файл меньше. Пересобирайте раз в неделю или месяц, чтобы данные были свежими.
+   [Planetiler](https://github.com/onthegomap/planetiler) 0.10.2 (версия закреплена).
+   Получаются два файла: основные тайлы в схеме OpenMapTiles и дополнительные —
+   подъезды и деревья (схема `tiles/extra.yml`). В подписи попадают только русский,
+   таджикский и английский, а мировые полигоны океана (~850 МБ) не скачиваются —
+   у Таджикистана нет моря. Пересобирайте раз в неделю или месяц, чтобы данные были
+   свежими.
 2. **Шрифты:**
    ```bash
    ./scripts/download-fonts.sh     # → fonts/
    ```
-3. **Выложите** `data/tajikistan.pmtiles`, `fonts/`, `sprites/` (и `styles/` для мобильных)
+3. **Выложите** `data/*.pmtiles`, `fonts/`, `sprites/` (и `styles/` для мобильных)
    на любой статический хостинг или CDN с поддержкой HTTP Range: nginx, S3,
    Cloudflare R2. Отдельный тайловый сервер не нужен: браузер сам читает нужные
    куски файла.
@@ -178,12 +190,13 @@ MapLibreMap(styleString: 'https://cdn.example.com/map/styles/yoobi-ru.json', ini
 
    createStyle({
      tiles: 'pmtiles://https://cdn.example.com/map/tajikistan.pmtiles',
+     extraTiles: 'pmtiles://https://cdn.example.com/map/tajikistan-extra.pmtiles',
      glyphs: 'https://cdn.example.com/map/fonts/{fontstack}/{range}.pbf',
      sprite: 'https://cdn.example.com/map/sprites/yoobi',
    });
    ```
    Для мобильных те же адреса передаются в сборку:
-   `npm run build -- --base-url=… --tiles=pmtiles://… --glyphs=…`.
+   `npm run build -- --base-url=… --tiles=pmtiles://… --extra-tiles=pmtiles://… --glyphs=…`.
    Свежие версии MapLibre Native (Android, iOS) читают `pmtiles://` напрямую.
    Если ваша версия не умеет, раздавайте тот же файл как `{z}/{x}/{y}.pbf`
    через `pmtiles serve` ([go-pmtiles](https://github.com/protomaps/go-pmtiles))
@@ -198,7 +211,7 @@ location /map/ {
     gzip on;
     gzip_types application/json application/x-protobuf;
 }
-location = /map/tajikistan.pmtiles {
+location ~ ^/map/.*\.pmtiles$ {
     add_header Access-Control-Allow-Origin *;
     add_header Access-Control-Allow-Headers Range;
     add_header Access-Control-Expose-Headers "Content-Length, Content-Range, ETag";
@@ -210,9 +223,24 @@ location = /map/tajikistan.pmtiles {
 
 - `mapOptions()` ограничивает `pixelRatio` двумя: на экранах 3x картинка почти та
   же, а пикселей в 2,25 раза меньше.
-- Для самых слабых устройств отключите тяжёлое: `createStyle({ buildings3d: false, hillshade: false })`.
-- Места (POI) показываются с 14 зума, объёмные здания — с 14,5. На мелких
-  масштабах карта остаётся лёгкой.
+- Для самых слабых устройств отключите тяжёлое: `createStyle({ buildings3d: false, hillshade: false, trees: false })`.
+- Места (POI) показываются с 14 зума, объёмные здания — с 14,5, деревья и тротуары —
+  с 15. На мелких масштабах карта остаётся лёгкой.
+- Деревья вдоль улиц и в парках — это текстуры линий и заливок, а не тысячи
+  отдельных значков: на отрисовку они почти не влияют.
+
+## Подъезды, номера домов, деревья
+
+- **Номера домов** есть в основных тайлах и видны с 16,5 зума.
+- **Подъезды** (`entrance=*` в OSM) с номером (`ref`) видны с 17 зума, номера квартир
+  (`addr:flats`) — с 18. Они лежат в дополнительных тайлах (`extraTiles`), потому что
+  схема OpenMapTiles их не содержит.
+- **Деревья:** ряды вдоль улиц и кроны в парках рисуются всегда (опция `trees`), а
+  отдельные деревья (`natural=tree`) и аллеи (`natural=tree_row`) из OSM добавляются
+  из дополнительных тайлов.
+
+Сколько подъездов и деревьев будет на карте, зависит от того, насколько подробно
+район нанесён в OpenStreetMap.
 
 ## Данные и лицензии
 
@@ -224,13 +252,14 @@ location = /map/tajikistan.pmtiles {
 - Шрифт Noto Sans — лицензия OFL. Значки нарисованы по мотивам Material Icons (Apache 2.0).
 - Сам стиль — MIT.
 
-**Почему не 2GIS.** Данные 2GIS закрытые: копировать их запрещают условия
-использования, а смешивать с данными OSM нельзя из-за лицензии ODbL. Если нужны
-именно их адреса и справочник, используйте официальный платный API 2GIS по ключу
-отдельно от этой карты. Номера домов, улицы, вокзалы и железные дороги в стиле уже
-есть из OSM. Если чего-то не хватает, добавьте это на
-[openstreetmap.org](https://www.openstreetmap.org): после обновления тайлов
-изменения появятся на карте.
+**Почему не 2GIS.** База 2GIS — их собственность: условия использования запрещают
+копировать из неё данные (адреса, дома, подъезды), а смешивать её с данными OSM
+не позволяет лицензия ODbL. Разрешение владельца проекта это не меняет — права на
+данные у 2GIS. Если нужен именно их справочник, подключайте официальный API 2GIS
+по ключу и показывайте его данные по их правилам, отдельно от этой карты. Номера
+домов, подъезды, улицы, вокзалы и железные дороги здесь берутся из OSM; чего не
+хватает — можно добавить на [openstreetmap.org](https://www.openstreetmap.org), и
+после пересборки тайлов это появится на карте.
 
 ## Настройка внешнего вида
 
@@ -251,5 +280,6 @@ map/
   sprites/            спрайт значков (1x и 2x), собирается из src
   styles/             готовые style.json для мобильных, собираются из src
   scripts/            сборка, проверка, демо-сервер, тайлы, шрифты
+  tiles/extra.yml     схема дополнительных тайлов (подъезды, деревья) для Planetiler
   demo/index.html     полноэкранная демо-карта
 ```

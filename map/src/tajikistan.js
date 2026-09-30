@@ -6,9 +6,9 @@ export const TAJIKISTAN_BOUNDS = [[66.0, 35.9], [76.5, 41.9]];
 // Центр Душанбе (площадь Исмоила Сомони) и рекомендуемый стартовый вид.
 export const DUSHANBE_VIEW = {
   center: [68.7788, 38.5772],
-  zoom: 15.6,
-  pitch: 55,
-  bearing: -15,
+  zoom: 16.2,
+  pitch: 50,
+  bearing: -12,
 };
 
 // Вся страна целиком.

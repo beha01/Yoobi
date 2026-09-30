@@ -12,9 +12,11 @@ import { buildStyle, poiFilter, textFieldFor, LANGUAGES } from './style.js';
 import { CATEGORY_BY_ID, OTHER, categoryFor } from './categories.js';
 import { TAJIKISTAN_BOUNDS, DUSHANBE_VIEW } from './tajikistan.js';
 
-export { buildStyle, DEFAULTS, COLORS, LANGUAGES, nameExpression, streetNameExpression, poiFilter } from './style.js';
 export {
-  CATEGORIES, CATEGORY_BY_ID, OTHER, AIRPORT, SUBCLASS_RU, categoryFor, iconFor,
+  buildStyle, DEFAULTS, COLORS, LANGUAGES, nameExpression, streetNameExpression, riverNameExpression, poiFilter,
+} from './style.js';
+export {
+  CATEGORIES, CATEGORY_BY_ID, OTHER, AIRPORT, SUBCLASS_RU, LANDMARK_CATEGORIES, categoryFor, iconFor,
 } from './categories.js';
 export { TAJIKISTAN_BOUNDS, DUSHANBE_VIEW, COUNTRY_VIEW, CITIES } from './tajikistan.js';
 
@@ -25,8 +27,8 @@ export function defaultSpriteUrl() {
 
 /**
  * Готовый объект стиля для `new maplibregl.Map({ style })`.
- * Опции — см. DEFAULTS в style.js: lang, tiles, glyphs, sprite, dem, hillshade,
- * terrain, buildings3d, poi, category.
+ * Опции — см. DEFAULTS в style.js: lang, tiles, extraTiles, glyphs, sprite, dem,
+ * hillshade, terrain, buildings3d, trees, poi, category.
  */
 export function createStyle(options = {}) {
   return buildStyle({ sprite: defaultSpriteUrl(), ...options });
@@ -74,7 +76,10 @@ export function setPoiCategory(map, category = null) {
   }
 }
 
-/** Включить/выключить группу слоёв: '3d' (здания), 'poi' (места), 'hillshade' (рельеф). */
+/**
+ * Включить/выключить группу слоёв: '3d' (здания), 'poi' (места), 'hillshade' (рельеф),
+ * 'trees' (деревья), 'entrances' (подъезды).
+ */
 export function setGroupVisible(map, group, visible) {
   for (const layer of layersWithMeta(map, 'yoobi:group')) {
     if (layer.metadata['yoobi:group'] === group) {
@@ -84,7 +89,7 @@ export function setGroupVisible(map, group, visible) {
 }
 
 /** Id слоёв с местами — для обработчиков `map.on('click', POI_LAYERS, …)`. */
-export const POI_LAYERS = ['poi-icon', 'poi-label', 'poi-minor', 'airport-label'];
+export const POI_LAYERS = ['poi-icon', 'poi-label', 'poi-landmark', 'poi-minor', 'park-label', 'airport-label'];
 
 /**
  * Описание места из объекта карты (например, из события click по POI_LAYERS):

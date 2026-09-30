@@ -54,9 +54,11 @@ function checkStyle(style, label) {
 const sprite = 'https://example.com/sprites/yoobi';
 const variants = [
   {},
-  { hillshade: false, buildings3d: false, poi: false },
+  { hillshade: false, buildings3d: false, poi: false, trees: false },
   { terrain: 1.3, category: 'food' },
   { tiles: ['https://example.com/{z}/{x}/{y}.pbf'], dem: null },
+  { extraTiles: 'pmtiles://https://example.com/extra.pmtiles' },
+  { extraTiles: 'https://example.com/extra.json', trees: false, category: 'gov' },
 ];
 for (const lang of LANGUAGES) {
   for (const v of variants) checkStyle(buildStyle({ sprite, lang, ...v }), `${lang} ${JSON.stringify(v)}`);

@@ -1,30 +1,78 @@
 #!/usr/bin/env bash
-# Собирает векторные тайлы Таджикистана из свежей выгрузки OpenStreetMap
-# в один файл data/tajikistan.pmtiles (схема OpenMapTiles — та же, что у стиля).
+# Собирает карту всего Таджикистана из свежей выгрузки OpenStreetMap:
 #
-# Нужен Docker (или Java 21+ и planetiler.jar — см. README).
+#   data/tajikistan.pmtiles        — основные тайлы (схема OpenMapTiles, как у стиля)
+#   data/tajikistan-extra.pmtiles  — подъезды с номерами и квартирами, деревья (tiles/extra.yml)
+#
+# Нужна Java 21+ (planetiler.jar скачается сам) или Docker.
 # Первый запуск скачивает вспомогательные данные (~1 ГБ), дальше — только выгрузку OSM.
 # Памяти хватает 2–4 ГБ, сборка занимает несколько минут.
 #
 #   ./scripts/build-tiles.sh
+#   PLANETILER_MEMORY=6g ./scripts/build-tiles.sh
 #
-# Готовый файл кладётся на любой статический хостинг или CDN с поддержкой
-# HTTP Range (nginx, S3, Cloudflare R2 и т.п.) и подключается так:
-#   createStyle({ tiles: 'pmtiles://https://cdn.example.com/map/tajikistan.pmtiles' })
+# Готовые файлы кладутся на статический хостинг или CDN с поддержкой HTTP Range
+# (nginx, S3, Cloudflare R2) и подключаются так:
+#   createStyle({
+#     tiles: 'pmtiles://https://cdn.example.com/map/tajikistan.pmtiles',
+#     extraTiles: 'pmtiles://https://cdn.example.com/map/tajikistan-extra.pmtiles',
+#   })
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+PLANETILER_VERSION=0.10.2
+MEMORY="${PLANETILER_MEMORY:-3g}"
+AREA="${AREA:-tajikistan}"
 mkdir -p data
 
-docker run --rm \
-  -e JAVA_TOOL_OPTIONS="-Xmx${PLANETILER_MEMORY:-3g}" \
-  -v "$(pwd)/data":/data \
-  ghcr.io/onthegomap/planetiler:latest \
+if command -v java >/dev/null && java -version 2>&1 | grep -Eq 'version "(2[1-9]|[3-9][0-9])'; then
+  JAR="data/planetiler-$PLANETILER_VERSION.jar"
+  if [[ ! -f "$JAR" ]]; then
+    curl -fL --retry 3 -o "$JAR.tmp" \
+      "https://github.com/onthegomap/planetiler/releases/download/v$PLANETILER_VERSION/planetiler.jar"
+    mv "$JAR.tmp" "$JAR"
+  fi
+  DATA=data
+  TILES=tiles
+  planetiler() { java "-Xmx$MEMORY" -jar "$JAR" "$@"; }
+elif command -v docker >/dev/null; then
+  DATA=/data
+  TILES=/tiles
+  planetiler() {
+    docker run --rm -e JAVA_TOOL_OPTIONS="-Xmx$MEMORY" \
+      -v "$(pwd)/data":/data -v "$(pwd)/tiles":/tiles -w / \
+      "ghcr.io/onthegomap/planetiler:$PLANETILER_VERSION" "$@"
+  }
+else
+  echo "Нужна Java 21+ или Docker" >&2
+  exit 1
+fi
+
+# У Таджикистана нет выхода к морю, поэтому вместо мировых полигонов океана
+# (~850 МБ) подставляется пустышка tiles/no-ocean.zip. Для приморских регионов
+# запускайте с OCEAN=1.
+OCEAN_ARGS=()
+if [[ "${OCEAN:-0}" != 1 ]]; then
+  OCEAN_ARGS=(--water_polygons_path="$TILES/no-ocean.zip")
+fi
+
+# 1. Основные тайлы. В подписи попадают только русский, таджикский и английский —
+#    так файл заметно меньше.
+planetiler \
   --download \
-  --area=tajikistan \
+  --area="$AREA" \
+  --download_dir="$DATA/sources" \
+  ${OCEAN_ARGS[@]+"${OCEAN_ARGS[@]}"} \
   --languages=ru,tg,en \
-  --output=/data/tajikistan.pmtiles \
+  --output="$DATA/$AREA.pmtiles" \
   --force
 
-ls -lh data/tajikistan.pmtiles
+# 2. Подъезды и деревья — из той же скачанной выгрузки.
+planetiler generate-custom \
+  --schema="$TILES/extra.yml" \
+  --osm_path="$DATA/sources/$AREA.osm.pbf" \
+  --output="$DATA/$AREA-extra.pmtiles" \
+  --force
+
+ls -lh "data/$AREA.pmtiles" "data/$AREA-extra.pmtiles"

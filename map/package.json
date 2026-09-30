@@ -1,6 +1,6 @@
 {
   "name": "@yoobi/map-style",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Стиль карты Таджикистана для MapLibre на открытых данных OpenStreetMap",
   "type": "module",
   "private": true,
@@ -14,7 +14,8 @@
   "files": [
     "src",
     "sprites",
-    "styles"
+    "styles",
+    "tiles"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

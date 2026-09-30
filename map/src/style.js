@@ -1,12 +1,16 @@
-// Светлый стиль карты Таджикистана на векторных тайлах OpenStreetMap
-// (схема OpenMapTiles). Светлые кварталы, сочная зелень парков, голубая вода,
-// белые улицы, объёмные здания и места с цветными значками.
+// Стиль карты Таджикистана на векторных тайлах OpenStreetMap (схема OpenMapTiles).
+//
+// Вблизи — «живой» город как на иллюстрации: серый асфальт с белыми бордюрами,
+// светлые тротуары, ряды деревьев вдоль улиц, сочные парки с кронами, светлые
+// объёмные дома, яркая вода. Места — цветные значки в белых «таблетках»,
+// знаковые здания — значок над домом и подпись в плашке. Издалека — рельеф гор,
+// ледники, реки, города и границы всей страны.
 //
 // Стиль использует только возможности, которые поддерживают и MapLibre GL JS,
 // и MapLibre Native (Android/iOS), поэтому один и тот же JSON работает везде.
 
 import {
-  AIRPORT, HIDDEN_CLASSES, MINOR_SUBCLASSES, categoryExpression, imageExpression,
+  AIRPORT, HIDDEN_CLASSES, LANDMARK_CATEGORIES, MINOR_SUBCLASSES, categoryExpression, imageExpression,
 } from './categories.js';
 
 export const LANGUAGES = ['ru', 'tg', 'en'];
@@ -15,6 +19,8 @@ export const DEFAULTS = {
   lang: 'ru',
   // TileJSON-адрес, `pmtiles://…` или массив шаблонов `https://…/{z}/{x}/{y}.pbf`.
   tiles: 'https://tiles.openfreemap.org/planet',
+  // Дополнительные тайлы с подъездами и деревьями (scripts/build-tiles.sh); null — без них.
+  extraTiles: null,
   glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
   // Абсолютный адрес спрайта без расширения, например https://example.com/map/sprites/yoobi
   sprite: null,
@@ -23,48 +29,62 @@ export const DEFAULTS = {
   hillshade: true,
   terrain: false, // число — объёмный рельеф с этим преувеличением, например 1.3
   buildings3d: true,
+  trees: true, // ряды деревьев вдоль улиц и кроны в парках
   poi: true,
   category: null, // id категории из CATEGORIES, чтобы показывать только её
 };
 
+// Геометрия картинок спрайта, от которой зависит раскладка подписей (см. scripts/sprite.mjs).
+export const PILL = { width: 68, height: 34, circleX: 17, contentLeft: 37, contentHeight: 18 };
+export const MARK = { width: 64, height: 64, circleY: 16, contentTop: 40, contentHeight: 16 };
+
 export const COLORS = {
-  land: '#F3F0EA',
-  residential: '#EEEAE2',
-  commercial: '#F1EAE3',
-  industrial: '#EAE6E0',
-  park: '#C6E6A3',
-  grass: '#D3ECB8',
-  wood: '#BFDFA0',
-  farmland: '#EEF0D8',
-  sand: '#F4ECD4',
-  rock: '#E6E2DA',
+  land: '#EEE9E0',
+  residential: '#ECE6DC',
+  commercial: '#EFE7DE',
+  industrial: '#E7E3DC',
+  park: '#A6D57E',
+  parkFar: '#C3E3A6',
+  grass: '#B5DC90',
+  wood: '#86C463',
+  farmland: '#E9ECCB',
+  sand: '#F2E9CF',
+  rock: '#E4E0D8',
   ice: '#FFFFFF',
-  wetland: '#D9EDCF',
-  pitch: '#BFE3A2',
-  cemetery: '#DCE9CC',
-  hospital: '#F9E7E6',
-  school: '#F4EEDC',
-  water: '#7CC8F2',
-  building: '#E4DDD1',
-  buildingOutline: '#D6CDBE',
-  building3d: '#F7F3EC',
-  roadCasing: '#E0D9CD',
+  wetland: '#CFE7C4',
+  pitch: '#B7E09A',
+  cemetery: '#D5E6C5',
+  hospital: '#F6E6E3',
+  school: '#F2EBDD',
+  water: '#54B8F0',
+  waterFar: '#8CCFF3',
+  building: '#E2DBCF',
+  buildingOutline: '#D3CABB',
+  building3d: '#F5EFE6',
+  building3dTall: '#E9E2D7',
+  sidewalk: '#F2E5C0',
+  curb: '#FFFFFF',
+  asphaltMajor: '#A9AEB4',
+  asphalt: '#C4C7CB',
+  asphaltService: '#D3D5D8',
   road: '#FFFFFF',
-  primary: '#FFF7DC',
-  primaryCasing: '#F2D27A',
+  roadCasing: '#DCD5C9',
+  primary: '#FFF3C4',
+  primaryCasing: '#EFCB6A',
   motorway: '#FFD970',
   motorwayCasing: '#E3B24A',
-  path: '#FFFFFF',
-  rail: '#C9C3B9',
-  aeroway: '#E1DCD3',
-  boundary: '#9C88B8',
-  label: '#2E2E2E',
-  roadLabel: '#3B3835',
-  labelMuted: '#6F665C',
-  country: '#6B5C85',
+  paving: '#F5F3EE',
+  pavingEdge: '#DCD6CB',
+  rail: '#B9B4AC',
+  aeroway: '#DCD8D1',
+  boundary: '#8E7BAE',
+  label: '#1E1E1E',
+  roadLabel: '#1C1C1C',
+  labelMuted: '#6A6258',
+  country: '#5F5078',
+  region: '#8A7E9E',
   halo: '#FFFFFF',
-  waterLabel: '#2F7FB8',
-  parkLabel: '#3B8A26',
+  waterLabel: '#1F6FA5',
   peak: '#7A5C3E',
   poiLabel: '#1E1E1E',
 };
@@ -77,8 +97,19 @@ const FONT = {
 
 const SOURCE = 'openmaptiles';
 
-// Высота области под текст в картинке «таблетки» (см. scripts/sprite.mjs).
-const PILL_CONTENT_HEIGHT = 18;
+function landcoverColor(park) {
+  const C = COLORS;
+  return ['match', ['get', 'class'],
+    'wood', C.wood,
+    'grass', ['match', ['get', 'subclass'], ['park', 'garden', 'village_green', 'recreation_ground'], park, C.grass],
+    'farmland', C.farmland,
+    'sand', C.sand,
+    'rock', C.rock,
+    'ice', C.ice,
+    'wetland', C.wetland,
+    C.grass];
+}
+const EXTRA = 'extra';
 
 // ——— Выражения ———
 
@@ -94,7 +125,7 @@ export function nameExpression(lang = 'ru') {
 // Названия улиц: «улица Айни» → «ул. Айни», «проспект Рудаки» → «просп. Рудаки».
 const ABBREVIATIONS = {
   ru: [['улица ', 'ул. '], ['проспект ', 'просп. '], ['переулок ', 'пер. '],
-    ['бульвар ', 'бул. '], ['проезд ', 'пр. '], ['шоссе ', 'ш. ']],
+    ['бульвар ', 'бул. '], ['проезд ', 'пр. '], ['шоссе ', 'ш. '], ['набережная ', 'наб. ']],
 };
 export function streetNameExpression(lang = 'ru') {
   const rules = ABBREVIATIONS[lang];
@@ -108,13 +139,27 @@ export function streetNameExpression(lang = 'ru') {
   return ['let', 'n', ['to-string', nameExpression(lang)], cases];
 }
 
+// Реки по-русски подписываются «р. Душанбинка».
+export function riverNameExpression(lang = 'ru') {
+  if (lang !== 'ru') return nameExpression(lang);
+  return ['let', 'n', ['to-string', nameExpression(lang)],
+    ['case',
+      ['any',
+        ['==', ['index-of', 'р. ', ['downcase', ['var', 'n']]], 0],
+        ['==', ['index-of', 'река', ['downcase', ['var', 'n']]], 0]],
+      ['var', 'n'],
+      ['concat', 'р. ', ['var', 'n']]]];
+}
+
 function peakLabelExpression(lang) {
   return ['format',
     nameExpression(lang), {},
     ['case', ['has', 'ele'], ['concat', '\n', ['to-string', ['get', 'ele']], ' м'], ''], { 'font-scale': 0.85 }];
 }
 
-const TEXT_BUILDERS = { name: nameExpression, street: streetNameExpression, peak: peakLabelExpression };
+const TEXT_BUILDERS = {
+  name: nameExpression, street: streetNameExpression, river: riverNameExpression, peak: peakLabelExpression,
+};
 
 // text-field для слоя с пометкой metadata['yoobi:text'] на нужном языке.
 export function textFieldFor(kind, lang) {
@@ -122,9 +167,15 @@ export function textFieldFor(kind, lang) {
 }
 
 const hasName = ['all', ['has', 'name'], ['!=', ['get', 'name'], '']];
+const isLine = ['==', ['geometry-type'], 'LineString'];
+const isPolygon = ['==', ['geometry-type'], 'Polygon'];
 
-// Фильтр слоёв мест: kind 'main' — основные категории, 'minor' — прочее и
-// мелочь вроде остановок (видны только вблизи), 'airport' — аэропорты.
+// Фильтр слоёв мест:
+//   'main'     — места со значком в «таблетке» (кафе, магазины, аптеки…);
+//   'landmark' — знаковые места (госучреждения, вузы, культура, мечети);
+//   'icon'     — значки без подписей на средних масштабах (main + landmark);
+//   'minor'    — прочее и мелочь вроде остановок (только вблизи);
+//   'airport'  — аэропорты.
 // category — показать только одну категорию.
 export function poiFilter(kind, category = null) {
   if (kind === 'airport') {
@@ -135,9 +186,16 @@ export function poiFilter(kind, category = null) {
     ['==', cat, 'other'],
     ['in', ['get', 'subclass'], ['literal', MINOR_SUBCLASSES]],
   ];
+  const landmark = ['in', cat, ['literal', LANDMARK_CATEGORIES]];
+  const kinds = {
+    main: ['all', ['!', minor], ['!', landmark]],
+    landmark: ['all', ['!', minor], landmark],
+    icon: ['!', minor],
+    minor,
+  };
   const filter = ['all', hasName,
     ['!', ['in', ['get', 'class'], ['literal', HIDDEN_CLASSES]]],
-    kind === 'minor' ? minor : ['!', minor],
+    kinds[kind],
   ];
   if (category) filter.push(['==', cat, category]);
   return filter;
@@ -145,58 +203,127 @@ export function poiFilter(kind, category = null) {
 
 const zoomLinear = (...stops) => ['interpolate', ['linear'], ['zoom'], ...stops];
 const zoomExp = (...stops) => ['interpolate', ['exponential', 1.5], ['zoom'], ...stops];
+// Таблица {зум: значение} → интерполяция по зуму.
+const table = (t, fn = (v) => v) => zoomExp(...Object.entries(t).flatMap(([z, v]) => [Number(z), fn(v, Number(z))]));
 
 // ——— Дороги ———
 
-// Ширина заливки по зумам: [зум, px, …]. Обводка шире на 1–2 px.
-const WIDTH = {
-  motorway: [5, 0.6, 9, 1.6, 12, 3, 14, 7, 16, 14, 18, 30],
-  primary: [7, 0.5, 10, 1.2, 12, 2.4, 14, 6, 16, 12, 18, 26],
-  secondary: [9, 0.4, 12, 1.4, 14, 4.5, 16, 9, 18, 20],
-  minor: [12, 0.3, 14, 2.2, 16, 5.5, 18, 13],
-  service: [14, 0.6, 16, 2.5, 18, 7],
-  path: [14, 0.6, 16, 1.3, 18, 3],
+// Ширина асфальта по зумам. Вблизи у дороги появляются бордюр и тротуар.
+const ROADS = [
+  { id: 'service', classes: ['service', 'track'], minzoom: 14, casing: 'roadCasing', low: 'road', near: 'asphaltService',
+    width: { 14: 0.8, 15: 2, 16: 4, 17: 7, 18: 12 } },
+  { id: 'minor', classes: ['minor'], minzoom: 12, casing: 'roadCasing', low: 'road', near: 'asphalt',
+    width: { 12: 0.5, 13: 1.2, 14: 3, 15: 5, 16: 8, 17: 13, 18: 22 } },
+  { id: 'secondary', classes: ['secondary', 'tertiary'], minzoom: 9, casing: 'roadCasing', low: 'road', near: 'asphaltMajor',
+    width: { 9: 0.5, 10: 0.8, 12: 1.8, 13: 3, 14: 5.5, 15: 8, 16: 12, 17: 20, 18: 32 } },
+  { id: 'primary', classes: ['primary'], minzoom: 7, casing: 'primaryCasing', low: 'primary', near: 'asphaltMajor',
+    width: { 7: 0.6, 9: 1.1, 10: 1.6, 12: 3, 13: 4.5, 14: 7, 15: 11, 16: 16, 17: 26, 18: 42 } },
+  { id: 'motorway', classes: ['motorway', 'trunk'], minzoom: 5, casing: 'motorwayCasing', low: 'motorway', near: 'asphaltMajor',
+    width: { 5: 0.8, 7: 1.2, 9: 2, 10: 2.5, 12: 4, 13: 5.5, 14: 8, 15: 12, 16: 18, 17: 28, 18: 44 } },
+];
+const SIDEWALK = { 15: 1.5, 16: 3, 17: 5, 18: 8 }; // ширина тротуара с каждой стороны
+const CANOPY = { 15: 5, 16: 12, 17: 20, 18: 32 }; // диаметр кроны дерева вдоль улицы
+const NEAR = [15, 16, 17, 18];
+const widthAt = (road, z) => {
+  const zs = Object.keys(road.width).map(Number);
+  if (road.width[z] !== undefined) return road.width[z];
+  return road.width[zs.find((k) => k > z) ?? zs.at(-1)];
 };
-const withCasing = (stops) => stops.map((v, i) => (i % 2 ? v + (stops[i - 1] >= 12 ? 2 : 1) : v));
+const roadFilter = (classes, brunnel) => ['all', isLine,
+  ['in', ['get', 'class'], ['literal', classes]],
+  brunnel === 'tunnel' ? ['==', ['get', 'brunnel'], 'tunnel'] : ['!=', ['get', 'brunnel'], 'tunnel'],
+];
 
-function roadLayers(id, classes, width, color, casingColor, minzoom, tunnel) {
-  const filter = ['all',
-    ['in', ['get', 'class'], ['literal', classes]],
-    tunnel ? ['==', ['get', 'brunnel'], 'tunnel'] : ['!=', ['get', 'brunnel'], 'tunnel'],
-  ];
-  const suffix = tunnel ? '-tunnel' : '';
-  const opacity = tunnel ? 0.55 : 1;
-  const base = { type: 'line', source: SOURCE, 'source-layer': 'transportation', minzoom, filter };
-  return [
-    {
-      ...base,
-      id: `${id}-casing${suffix}`,
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': casingColor,
-        'line-width': zoomExp(...withCasing(width)),
-        'line-opacity': opacity,
-        ...(tunnel && { 'line-dasharray': [1, 0.6] }),
-      },
+function tunnelLayers() {
+  return ROADS.map((r) => ({
+    id: `tunnel-${r.id}`,
+    type: 'line',
+    source: SOURCE,
+    'source-layer': 'transportation',
+    minzoom: Math.max(r.minzoom, 12),
+    filter: roadFilter(r.classes, 'tunnel'),
+    layout: { 'line-join': 'round' },
+    paint: {
+      'line-color': COLORS[r.casing],
+      'line-width': table(r.width),
+      'line-opacity': 0.5,
+      'line-dasharray': [2, 1.5],
     },
-    {
-      ...base,
-      id: `${id}${suffix}`,
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': color, 'line-width': zoomExp(...width), 'line-opacity': opacity },
-    },
-  ];
+  }));
 }
 
-function roads(tunnel) {
-  const C = COLORS;
-  return [
-    ...roadLayers('road-service', ['service', 'track'], WIDTH.service, C.road, C.roadCasing, 14, tunnel),
-    ...roadLayers('road-minor', ['minor'], WIDTH.minor, C.road, C.roadCasing, 12, tunnel),
-    ...roadLayers('road-secondary', ['secondary', 'tertiary'], WIDTH.secondary, C.road, C.roadCasing, 9, tunnel),
-    ...roadLayers('road-primary', ['primary'], WIDTH.primary, C.primary, C.primaryCasing, 7, tunnel),
-    ...roadLayers('road-motorway', ['motorway', 'trunk'], WIDTH.motorway, C.motorway, C.motorwayCasing, 5, tunnel),
-  ];
+// Тротуары: самая широкая «подложка» дороги, только вблизи.
+function sidewalkLayers() {
+  return ROADS.filter((r) => r.id !== 'service').map((r) => ({
+    id: `sidewalk-${r.id}`,
+    type: 'line',
+    source: SOURCE,
+    'source-layer': 'transportation',
+    minzoom: 14.5,
+    filter: roadFilter(r.classes),
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': COLORS.sidewalk,
+      'line-width': zoomExp(...NEAR.flatMap((z) => [z, widthAt(r, z) + 2 + SIDEWALK[z] * 2])),
+      'line-opacity': zoomLinear(14.5, 0, 15.5, 1),
+    },
+  }));
+}
+
+// Ряды деревьев вдоль улиц: кроны касаются бордюра, стоят на тротуаре и краю квартала.
+function streetTreeLayers() {
+  const classes = ['minor', 'secondary', 'tertiary', 'primary'];
+  const offset = (sign) => zoomExp(...NEAR.flatMap((z) => [z, ['match', ['get', 'class'],
+    ...ROADS.filter((r) => r.classes.some((c) => classes.includes(c)))
+      .flatMap((r) => [r.classes.filter((c) => classes.includes(c)), sign * (widthAt(r, z) / 2 + 1 + CANOPY[z] / 2)]),
+    0]]));
+  return [-1, 1].map((sign) => ({
+    id: `trees-street-${sign < 0 ? 'left' : 'right'}`,
+    type: 'line',
+    source: SOURCE,
+    'source-layer': 'transportation',
+    minzoom: 15,
+    filter: ['all', isLine,
+      ['in', ['get', 'class'], ['literal', classes]],
+      ['!', ['in', ['get', 'brunnel'], ['literal', ['bridge', 'tunnel']]]]],
+    metadata: { 'yoobi:group': 'trees' },
+    paint: {
+      'line-pattern': 'tree-row',
+      'line-width': zoomExp(...NEAR.flatMap((z) => [z, CANOPY[z]])),
+      'line-offset': offset(sign),
+      'line-opacity': zoomLinear(15, 0, 15.8, 1),
+    },
+  }));
+}
+
+function roadLayers() {
+  const casings = ROADS.map((r) => ({
+    id: `road-${r.id}-casing`,
+    type: 'line',
+    source: SOURCE,
+    'source-layer': 'transportation',
+    minzoom: r.minzoom,
+    filter: roadFilter(r.classes),
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': zoomLinear(14.5, COLORS[r.casing], 15.8, COLORS.curb),
+      'line-width': table(r.width, (w, z) => w + (z >= 12 ? 2 : 1)),
+    },
+  }));
+  const fills = ROADS.map((r) => ({
+    id: `road-${r.id}`,
+    type: 'line',
+    source: SOURCE,
+    'source-layer': 'transportation',
+    minzoom: r.minzoom,
+    filter: roadFilter(r.classes),
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': zoomLinear(14.5, COLORS[r.low], 15.8, COLORS[r.near]),
+      'line-width': table(r.width),
+    },
+  }));
+  return [...casings, ...fills];
 }
 
 // ——— Стиль целиком ———
@@ -212,29 +339,30 @@ export function buildStyle(options = {}) {
   const C = COLORS;
   const name = nameExpression(o.lang);
   const text = (kind) => ({ 'yoobi:text': kind });
+  const extra = Boolean(o.extraTiles);
 
-  const sources = {
-    [SOURCE]: Array.isArray(o.tiles)
-      ? { type: 'vector', tiles: o.tiles, maxzoom: 14,
-        attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a>' }
-      : { type: 'vector', url: o.tiles },
-  };
-  const demSource = (maxzoom) => ({
+  const vector = (tiles) => (Array.isArray(tiles)
+    ? { type: 'vector', tiles, maxzoom: 14,
+      attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a>' }
+    : { type: 'vector', url: tiles });
+  const sources = { [SOURCE]: vector(o.tiles) };
+  if (extra) sources[EXTRA] = vector(o.extraTiles);
+  const demSource = () => ({
     type: 'raster-dem',
     tiles: [o.dem],
     encoding: 'terrarium',
     tileSize: 256,
-    maxzoom,
+    maxzoom: 12,
     attribution: '<a href="https://registry.opendata.aws/terrain-tiles/" target="_blank">Рельеф: Terrain Tiles</a>',
   });
   const hillshade = o.dem && o.hillshade;
-  if (hillshade) sources.hillshade = demSource(12);
-  if (o.dem && o.terrain) sources.terrain = demSource(12);
+  if (hillshade) sources.hillshade = demSource();
+  if (o.dem && o.terrain) sources.terrain = demSource();
 
   const layers = [
     { id: 'background', type: 'background', paint: { 'background-color': C.land } },
 
-    // ——— Земля: застройка, затем растительность, пески и ледники поверх неё ———
+    // ——— Земля: застройка, затем зелень, пески и ледники поверх неё ———
     {
       id: 'landuse',
       type: 'fill',
@@ -243,7 +371,7 @@ export function buildStyle(options = {}) {
       filter: ['in', ['get', 'class'], ['literal', [
         'residential', 'suburb', 'neighbourhood', 'commercial', 'retail', 'industrial',
         'railway', 'cemetery', 'hospital', 'school', 'university', 'college', 'kindergarten',
-        'stadium', 'pitch', 'playground', 'garages', 'military']]],
+        'library', 'stadium', 'pitch', 'playground', 'garages', 'military']]],
       paint: {
         'fill-color': ['match', ['get', 'class'],
           ['residential', 'suburb', 'neighbourhood'], C.residential,
@@ -251,7 +379,7 @@ export function buildStyle(options = {}) {
           ['industrial', 'railway', 'garages', 'military'], C.industrial,
           'cemetery', C.cemetery,
           'hospital', C.hospital,
-          ['school', 'university', 'college', 'kindergarten'], C.school,
+          ['school', 'university', 'college', 'kindergarten', 'library'], C.school,
           ['stadium', 'pitch', 'playground'], C.pitch,
           C.residential],
         'fill-opacity': zoomLinear(8, 0.5, 12, 1),
@@ -263,26 +391,33 @@ export function buildStyle(options = {}) {
       source: SOURCE,
       'source-layer': 'landcover',
       paint: {
-        'fill-color': ['match', ['get', 'class'],
-          'wood', C.wood,
-          'grass', ['match', ['get', 'subclass'],
-            ['park', 'garden', 'village_green', 'recreation_ground'], C.park, C.grass],
-          'farmland', C.farmland,
-          'sand', C.sand,
-          'rock', C.rock,
-          'ice', C.ice,
-          'wetland', C.wetland,
-          C.grass],
-        'fill-opacity': ['match', ['get', 'class'], 'farmland', 0.7, 'rock', 0.8, 1],
+        'fill-color': zoomLinear(11, landcoverColor(C.parkFar), 15, landcoverColor(C.park)),
+        'fill-opacity': ['match', ['get', 'class'], 'farmland', 0.75, 'rock', 0.8, 1],
         'fill-antialias': false,
       },
     },
+    ...(o.trees ? [{
+      id: 'landcover-trees',
+      type: 'fill',
+      source: SOURCE,
+      'source-layer': 'landcover',
+      minzoom: 14.5,
+      filter: ['any',
+        ['==', ['get', 'class'], 'wood'],
+        ['all', ['==', ['get', 'class'], 'grass'], ['in', ['get', 'subclass'], ['literal', ['park', 'garden']]]]],
+      metadata: { 'yoobi:group': 'trees' },
+      paint: {
+        'fill-pattern': ['match', ['get', 'class'], 'wood', 'pattern-wood', 'pattern-park'],
+        'fill-opacity': zoomLinear(14.5, 0, 15.5, 1),
+        'fill-antialias': false,
+      },
+    }] : []),
     {
       id: 'park',
       type: 'fill',
       source: SOURCE,
       'source-layer': 'park',
-      paint: { 'fill-color': C.park, 'fill-opacity': zoomLinear(6, 0.25, 12, 0.45) },
+      paint: { 'fill-color': C.parkFar, 'fill-opacity': zoomLinear(6, 0.25, 12, 0.4) },
     },
     ...(hillshade ? [{
       id: 'hillshade',
@@ -291,10 +426,10 @@ export function buildStyle(options = {}) {
       maxzoom: 16,
       metadata: { 'yoobi:group': 'hillshade' },
       paint: {
-        'hillshade-exaggeration': zoomLinear(5, 0.45, 10, 0.3, 14, 0.12, 16, 0),
-        'hillshade-shadow-color': '#A89C88',
+        'hillshade-exaggeration': zoomLinear(5, 0.5, 9, 0.38, 13, 0.16, 16, 0),
+        'hillshade-shadow-color': '#9C8F7A',
         'hillshade-highlight-color': '#FFFFFF',
-        'hillshade-accent-color': '#C9BFAE',
+        'hillshade-accent-color': '#C3B9A6',
       },
     }] : []),
 
@@ -305,7 +440,7 @@ export function buildStyle(options = {}) {
       source: SOURCE,
       'source-layer': 'water',
       filter: ['!=', ['get', 'brunnel'], 'tunnel'],
-      paint: { 'fill-color': C.water },
+      paint: { 'fill-color': zoomLinear(8, C.waterFar, 14, C.water) },
     },
     {
       id: 'waterway',
@@ -315,12 +450,13 @@ export function buildStyle(options = {}) {
       filter: ['!=', ['get', 'brunnel'], 'tunnel'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': C.water,
+        'line-color': zoomLinear(8, C.waterFar, 14, C.water),
         'line-width': zoomExp(
-          8, ['match', ['get', 'class'], 'river', 0.8, 0.2],
-          12, ['match', ['get', 'class'], 'river', 2, 0.5],
+          6, ['match', ['get', 'class'], 'river', 0.6, 0],
+          9, ['match', ['get', 'class'], 'river', 1.2, 0.3],
+          12, ['match', ['get', 'class'], 'river', 2.4, 0.6],
           14, ['match', ['get', 'class'], 'river', 5, 1.5],
-          18, ['match', ['get', 'class'], 'river', 16, 5]),
+          18, ['match', ['get', 'class'], 'river', 18, 5]),
       },
     },
 
@@ -331,7 +467,7 @@ export function buildStyle(options = {}) {
       source: SOURCE,
       'source-layer': 'aeroway',
       minzoom: 11,
-      filter: ['in', ['get', 'class'], ['literal', ['runway', 'taxiway']]],
+      filter: ['all', isLine, ['in', ['get', 'class'], ['literal', ['runway', 'taxiway']]]],
       paint: {
         'line-color': C.aeroway,
         'line-width': zoomExp(
@@ -340,17 +476,67 @@ export function buildStyle(options = {}) {
       },
     },
 
-    // ——— Дороги ———
-    ...roads(true),
+    // ——— Площади и пешеходные зоны ———
+    {
+      id: 'pedestrian-area',
+      type: 'fill',
+      source: SOURCE,
+      'source-layer': 'transportation',
+      minzoom: 13,
+      filter: ['all', isPolygon, ['in', ['get', 'class'], ['literal', ['path', 'pedestrian', 'minor', 'service']]]],
+      paint: { 'fill-color': C.paving, 'fill-outline-color': C.pavingEdge },
+    },
+
+    // ——— Дороги: тоннели, тротуары, деревья, бордюры, асфальт ———
+    ...tunnelLayers(),
+    ...sidewalkLayers(),
+    ...(o.trees ? streetTreeLayers() : []),
+    ...(extra && o.trees ? [
+      {
+        id: 'trees-osm-row',
+        type: 'line',
+        source: EXTRA,
+        'source-layer': 'tree_row',
+        minzoom: 15,
+        metadata: { 'yoobi:group': 'trees' },
+        paint: { 'line-pattern': 'tree-row', 'line-width': zoomExp(...NEAR.flatMap((z) => [z, CANOPY[z]])) },
+      },
+      {
+        id: 'trees-osm',
+        type: 'symbol',
+        source: EXTRA,
+        'source-layer': 'tree',
+        minzoom: 15,
+        metadata: { 'yoobi:group': 'trees' },
+        layout: {
+          'icon-image': 'tree',
+          'icon-size': zoomExp(15, 0.28, 16, 0.55, 17, 0.95, 18, 1.5),
+          'icon-rotation-alignment': 'map',
+          'icon-pitch-alignment': 'map',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      },
+    ] : []),
+    {
+      id: 'path-casing',
+      type: 'line',
+      source: SOURCE,
+      'source-layer': 'transportation',
+      minzoom: 15,
+      filter: ['all', isLine, ['==', ['get', 'class'], 'path'], ['!=', ['get', 'brunnel'], 'tunnel']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': C.pavingEdge, 'line-width': zoomExp(15, 2.2, 16, 3.4, 17, 5, 18, 8) },
+    },
     {
       id: 'path',
       type: 'line',
       source: SOURCE,
       'source-layer': 'transportation',
       minzoom: 14,
-      filter: ['all', ['==', ['get', 'class'], 'path'], ['!=', ['get', 'brunnel'], 'tunnel']],
+      filter: ['all', isLine, ['==', ['get', 'class'], 'path'], ['!=', ['get', 'brunnel'], 'tunnel']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': C.path, 'line-width': zoomExp(...WIDTH.path), 'line-opacity': 0.95 },
+      paint: { 'line-color': C.paving, 'line-width': zoomExp(14, 0.8, 15, 1.4, 16, 2.4, 17, 3.8, 18, 6.5) },
     },
     {
       id: 'railway',
@@ -358,7 +544,7 @@ export function buildStyle(options = {}) {
       source: SOURCE,
       'source-layer': 'transportation',
       minzoom: 9,
-      filter: ['all', ['in', ['get', 'class'], ['literal', ['rail', 'transit']]], ['!=', ['get', 'brunnel'], 'tunnel']],
+      filter: ['all', isLine, ['in', ['get', 'class'], ['literal', ['rail', 'transit']]], ['!=', ['get', 'brunnel'], 'tunnel']],
       paint: { 'line-color': C.rail, 'line-width': zoomExp(9, 0.6, 14, 1.8, 18, 3.5) },
     },
     {
@@ -367,10 +553,10 @@ export function buildStyle(options = {}) {
       source: SOURCE,
       'source-layer': 'transportation',
       minzoom: 13,
-      filter: ['all', ['in', ['get', 'class'], ['literal', ['rail', 'transit']]], ['!=', ['get', 'brunnel'], 'tunnel']],
+      filter: ['all', isLine, ['in', ['get', 'class'], ['literal', ['rail', 'transit']]], ['!=', ['get', 'brunnel'], 'tunnel']],
       paint: { 'line-color': '#FFFFFF', 'line-width': zoomExp(13, 0.6, 18, 2), 'line-dasharray': [3, 3] },
     },
-    ...roads(false),
+    ...roadLayers(),
 
     // ——— Здания ———
     {
@@ -395,10 +581,10 @@ export function buildStyle(options = {}) {
       metadata: { 'yoobi:group': '3d' },
       paint: {
         'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 6],
-          0, C.building3d, 40, '#F1ECE3', 120, '#E6E0D6'],
+          0, C.building3d, 60, C.building3dTall],
         'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-        'fill-extrusion-opacity': 0.95,
+        'fill-extrusion-opacity': 1,
         'fill-extrusion-vertical-gradient': true,
       },
     }] : []),
@@ -442,18 +628,18 @@ export function buildStyle(options = {}) {
       type: 'symbol',
       source: SOURCE,
       'source-layer': 'waterway',
-      minzoom: 12,
+      minzoom: 11,
       filter: ['all', hasName, ['==', ['get', 'class'], 'river']],
-      metadata: text('name'),
+      metadata: text('river'),
       layout: {
         'symbol-placement': 'line',
-        'symbol-spacing': 400,
-        'text-field': name,
+        'symbol-spacing': 420,
+        'text-field': riverNameExpression(o.lang),
         'text-font': FONT.italic,
-        'text-size': zoomLinear(12, 11, 16, 13),
-        'text-letter-spacing': 0.1,
+        'text-size': zoomLinear(11, 11, 14, 13, 17, 15),
+        'text-letter-spacing': 0.06,
       },
-      paint: { 'text-color': C.waterLabel, 'text-halo-color': 'rgba(255,255,255,0.8)', 'text-halo-width': 1.2 },
+      paint: { 'text-color': C.waterLabel, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 },
     },
     {
       id: 'water-label',
@@ -468,7 +654,7 @@ export function buildStyle(options = {}) {
         'text-size': zoomLinear(8, 11, 14, 14),
         'text-max-width': 8,
       },
-      paint: { 'text-color': C.waterLabel, 'text-halo-color': 'rgba(255,255,255,0.8)', 'text-halo-width': 1.2 },
+      paint: { 'text-color': C.waterLabel, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 },
     },
     {
       id: 'road-label',
@@ -481,31 +667,71 @@ export function buildStyle(options = {}) {
       metadata: text('street'),
       layout: {
         'symbol-placement': 'line',
-        'symbol-spacing': 320,
+        'symbol-spacing': 340,
         'text-field': streetNameExpression(o.lang),
         'text-font': FONT.regular,
         'text-size': zoomLinear(
           13, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary'], 11, 10],
-          17, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], 14.5, 13]),
+          16, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], 14, 13],
+          18, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], 17, 15.5]),
+        'text-letter-spacing': 0.02,
         'text-max-angle': 30,
         'text-padding': 4,
       },
-      paint: { 'text-color': C.roadLabel, 'text-halo-color': C.halo, 'text-halo-width': 1.6 },
+      paint: { 'text-color': C.roadLabel, 'text-halo-color': C.halo, 'text-halo-width': 2, 'text-halo-blur': 0.3 },
     },
     {
       id: 'housenumber',
       type: 'symbol',
       source: SOURCE,
       'source-layer': 'housenumber',
-      minzoom: 17,
+      minzoom: 16.5,
       layout: {
         'text-field': ['to-string', ['get', 'housenumber']],
         'text-font': FONT.regular,
-        'text-size': 10,
+        'text-size': zoomLinear(16.5, 10.5, 18, 12.5),
         'text-padding': 3,
       },
-      paint: { 'text-color': '#9B9083', 'text-halo-color': C.land, 'text-halo-width': 1 },
+      paint: { 'text-color': '#7B7064', 'text-halo-color': '#F7F3EC', 'text-halo-width': 1.4 },
     },
+    ...(extra ? [
+      {
+        id: 'entrance-dot',
+        type: 'symbol',
+        source: EXTRA,
+        'source-layer': 'entrance',
+        minzoom: 17,
+        filter: ['!', ['has', 'ref']],
+        metadata: { 'yoobi:group': 'entrances' },
+        layout: { 'icon-image': 'entrance-dot', 'icon-padding': 0 },
+      },
+      {
+        id: 'entrance',
+        type: 'symbol',
+        source: EXTRA,
+        'source-layer': 'entrance',
+        minzoom: 17,
+        filter: ['has', 'ref'],
+        metadata: { 'yoobi:group': 'entrances' },
+        layout: {
+          'icon-image': 'label-entrance',
+          'icon-text-fit': 'both',
+          'icon-text-fit-padding': [0, 1, 0, 1],
+          // С 18 зума под номером подъезда — номера квартир.
+          'text-field': ['step', ['zoom'],
+            ['to-string', ['get', 'ref']],
+            18, ['format',
+              ['to-string', ['get', 'ref']], {},
+              ['case', ['has', 'flats'], ['concat', '\n', 'кв. ', ['to-string', ['get', 'flats']]], ''],
+              { 'font-scale': 0.8 }]],
+          'text-font': FONT.bold,
+          'text-size': 10,
+          'text-line-height': 1.2,
+          'text-padding': 1,
+        },
+        paint: { 'text-color': '#4A4238' },
+      },
+    ] : []),
     {
       id: 'mountain-peak',
       type: 'symbol',
@@ -525,23 +751,6 @@ export function buildStyle(options = {}) {
         'symbol-sort-key': ['-', 0, ['coalesce', ['get', 'ele'], 0]],
       },
       paint: { 'text-color': C.peak, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.2 },
-    },
-    {
-      id: 'park-label',
-      type: 'symbol',
-      source: SOURCE,
-      'source-layer': 'poi',
-      minzoom: 14,
-      filter: ['all', hasName, ['==', ['get', 'class'], 'park']],
-      metadata: text('name'),
-      layout: {
-        'text-field': name,
-        'text-font': FONT.bold,
-        'text-size': zoomLinear(14, 12, 18, 15),
-        'text-max-width': 8,
-        'symbol-sort-key': ['coalesce', ['get', 'rank'], 99],
-      },
-      paint: { 'text-color': C.parkLabel, 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.6 },
     },
     // Места ниже подписей населённых пунктов: при нехватке места города важнее.
     ...(o.poi ? poiLayers(o) : []),
@@ -580,42 +789,27 @@ export function buildStyle(options = {}) {
       },
       paint: { 'text-color': C.label, 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 },
     },
+    ...placeLayers('town', 6, 15, 'dot-town', zoomLinear(6, 10, 10, 13, 12, 15), o),
+    ...placeLayers('city', 4, 14, ['case', ['==', ['get', 'capital'], 2], 'dot-capital', 'dot-city'],
+      zoomLinear(4, ['case', ['==', ['get', 'capital'], 2], 13, 11], 10, ['case', ['==', ['get', 'capital'], 2], 22, 17]), o),
     {
-      id: 'place-town',
+      id: 'place-state',
       type: 'symbol',
       source: SOURCE,
       'source-layer': 'place',
-      minzoom: 6,
-      maxzoom: 15,
-      filter: ['==', ['get', 'class'], 'town'],
+      minzoom: 5,
+      maxzoom: 8.5,
+      filter: ['in', ['get', 'class'], ['literal', ['state', 'province']]],
       metadata: text('name'),
       layout: {
         'text-field': name,
-        'text-font': FONT.bold,
-        'text-size': zoomLinear(6, 10, 12, 15),
-        'text-max-width': 8,
+        'text-font': FONT.regular,
+        'text-size': zoomLinear(5, 10.5, 8, 13),
+        'text-transform': 'uppercase',
+        'text-letter-spacing': 0.12,
+        'text-max-width': 7,
       },
-      paint: { 'text-color': C.label, 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.5 },
-    },
-    {
-      id: 'place-city',
-      type: 'symbol',
-      source: SOURCE,
-      'source-layer': 'place',
-      minzoom: 4,
-      maxzoom: 14,
-      filter: ['==', ['get', 'class'], 'city'],
-      metadata: text('name'),
-      layout: {
-        'text-field': name,
-        'text-font': FONT.bold,
-        'text-size': zoomLinear(
-          4, ['case', ['==', ['get', 'capital'], 2], 13, 11],
-          10, ['case', ['==', ['get', 'capital'], 2], 22, 17]),
-        'text-max-width': 8,
-        'symbol-sort-key': ['coalesce', ['get', 'rank'], 99],
-      },
-      paint: { 'text-color': '#1F1F1F', 'text-halo-color': 'rgba(255,255,255,0.95)', 'text-halo-width': 1.8 },
+      paint: { 'text-color': C.region, 'text-halo-color': 'rgba(255,255,255,0.8)', 'text-halo-width': 1.4 },
     },
     {
       id: 'place-country',
@@ -643,21 +837,56 @@ export function buildStyle(options = {}) {
     sources,
     sprite: o.sprite,
     glyphs: o.glyphs,
-    light: { anchor: 'viewport', color: '#ffffff', intensity: 0.32, position: [1.2, 200, 35] },
+    light: { anchor: 'viewport', color: '#ffffff', intensity: 0.35, position: [1.3, 210, 38] },
     ...(o.dem && o.terrain && { terrain: { source: 'terrain', exaggeration: Number(o.terrain) || 1 } }),
     layers,
   };
 }
 
-// ——— Места: цветной значок + название в белой «таблетке» ———
+// Города и посёлки: издалека — точка и подпись сбоку, вблизи — подпись по центру.
+function placeLayers(cls, minzoom, maxzoom, dot, size, o) {
+  const base = {
+    type: 'symbol',
+    source: SOURCE,
+    'source-layer': 'place',
+    filter: ['==', ['get', 'class'], cls],
+    metadata: { 'yoobi:text': 'name' },
+    paint: { 'text-color': COLORS.label, 'text-halo-color': 'rgba(255,255,255,0.95)', 'text-halo-width': 1.8 },
+  };
+  const text = {
+    'text-field': nameExpression(o.lang),
+    'text-font': FONT.bold,
+    'text-size': size,
+    'text-max-width': 8,
+    'symbol-sort-key': ['coalesce', ['get', 'rank'], 99],
+  };
+  return [
+    {
+      ...base,
+      id: `place-${cls}-dot`,
+      minzoom,
+      maxzoom: 10,
+      layout: {
+        ...text,
+        'icon-image': dot,
+        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+        'text-radial-offset': 0.55,
+        'text-justify': 'auto',
+      },
+    },
+    { ...base, id: `place-${cls}`, minzoom: 10, maxzoom, layout: text },
+  ];
+}
+
+// ——— Места ———
 function poiLayers(o) {
   const name = nameExpression(o.lang);
   const base = { type: 'symbol', source: SOURCE, 'source-layer': 'poi' };
+  const sort = ['coalesce', ['get', 'rank'], 99];
   // Строка текста занимает 1.2 × size по высоте; отступы добирают её до высоты
-  // области content в спрайте (PILL_CONTENT_HEIGHT), чтобы картинка не тянулась.
-  // Круг значка стоит на 19 px левее текста — сдвигаем текст, чтобы круг был в точке.
+  // области content в картинке, чтобы круг значка не растягивался.
   const pill = (size) => {
-    const v = Math.round(((PILL_CONTENT_HEIGHT - 1.2 * size) / 2) * 100) / 100;
+    const v = Math.round(((PILL.contentHeight - 1.2 * size) / 2) * 100) / 100;
     return {
       'icon-image': imageExpression('pill'),
       'icon-text-fit': 'both',
@@ -667,44 +896,66 @@ function poiLayers(o) {
       'text-size': size,
       'text-line-height': 1.2,
       'text-anchor': 'left',
-      'text-offset': [19 / size, 0],
+      // Круг значка — левее текста: сдвигаем текст так, чтобы круг был в точке места.
+      'text-offset': [(PILL.contentLeft - PILL.circleX + 3) / size, 0],
       'text-max-width': 40,
       'text-padding': 2,
-      'symbol-sort-key': ['coalesce', ['get', 'rank'], 99],
+      'symbol-sort-key': sort,
+    };
+  };
+  const mark = (size) => {
+    const v = Math.round(((MARK.contentHeight - 1.2 * size) / 2) * 100) / 100;
+    return {
+      'icon-image': imageExpression('mark', LANDMARK_CATEGORIES),
+      'icon-text-fit': 'both',
+      'icon-text-fit-padding': [v, 3, v, 3],
+      'text-field': name,
+      'text-font': FONT.regular,
+      'text-size': size,
+      'text-line-height': 1.2,
+      'text-anchor': 'top',
+      'text-justify': 'center',
+      // Круг значка — над плашкой: сдвигаем текст вниз, чтобы круг был в точке места.
+      'text-offset': [0, (MARK.contentTop - MARK.circleY + v) / size],
+      'text-max-width': 9,
+      'text-padding': 2,
+      'symbol-sort-key': sort,
     };
   };
   const paint = { 'text-color': COLORS.poiLabel };
+  const meta = (kind, textKind = 'name') => ({ 'yoobi:poi': kind, 'yoobi:group': 'poi', ...(textKind && { 'yoobi:text': textKind }) });
   return [
     {
       ...base,
       id: 'poi-icon',
       minzoom: 14,
-      maxzoom: 15.5,
-      filter: poiFilter('main', o.category),
-      metadata: { 'yoobi:poi': 'main', 'yoobi:group': 'poi' },
+      maxzoom: 15,
+      filter: poiFilter('icon', o.category),
+      metadata: meta('icon', null),
+      layout: { 'icon-image': imageExpression('poi'), 'icon-padding': 1, 'symbol-sort-key': sort },
+    },
+    { ...base, id: 'poi-minor', minzoom: 17, filter: poiFilter('minor', o.category), metadata: meta('minor'), layout: pill(12), paint },
+    { ...base, id: 'poi-label', minzoom: 15, filter: poiFilter('main', o.category), metadata: meta('main'), layout: pill(13), paint },
+    { ...base, id: 'poi-landmark', minzoom: 15, filter: poiFilter('landmark', o.category), metadata: meta('landmark'), layout: mark(13), paint: { 'text-color': '#2A2A2A' } },
+    {
+      ...base,
+      id: 'park-label',
+      minzoom: 14.5,
+      filter: ['all', hasName, ['in', ['get', 'class'], ['literal', ['park', 'garden']]]],
+      metadata: { 'yoobi:text': 'name' },
       layout: {
-        'icon-image': imageExpression('poi'),
-        'icon-padding': 1,
-        'symbol-sort-key': ['coalesce', ['get', 'rank'], 99],
+        'icon-image': 'label-park',
+        'icon-text-fit': 'both',
+        'icon-text-fit-padding': [0, 4, 0, 4],
+        'text-field': name,
+        'text-font': FONT.bold,
+        'text-size': 13.5,
+        'text-line-height': 1.2,
+        'text-max-width': 9,
+        'text-padding': 4,
+        'symbol-sort-key': sort,
       },
-    },
-    {
-      ...base,
-      id: 'poi-minor',
-      minzoom: 17,
-      filter: poiFilter('minor', o.category),
-      metadata: { 'yoobi:poi': 'minor', 'yoobi:group': 'poi', 'yoobi:text': 'name' },
-      layout: pill(11.5),
-      paint,
-    },
-    {
-      ...base,
-      id: 'poi-label',
-      minzoom: 15.5,
-      filter: poiFilter('main', o.category),
-      metadata: { 'yoobi:poi': 'main', 'yoobi:group': 'poi', 'yoobi:text': 'name' },
-      layout: pill(12.5),
-      paint,
+      paint: { 'text-color': '#FFFFFF' },
     },
     {
       id: 'airport-label',
@@ -713,9 +964,9 @@ function poiLayers(o) {
       'source-layer': 'aerodrome_label',
       minzoom: 10,
       filter: poiFilter('airport', o.category),
-      metadata: { 'yoobi:poi': 'airport', 'yoobi:group': 'poi', 'yoobi:text': 'name' },
+      metadata: meta('airport'),
       layout: {
-        ...pill(12.5),
+        ...pill(13),
         'icon-image': `pill-${AIRPORT.id}-${AIRPORT.icon}`,
         'symbol-sort-key': ['match', ['get', 'class'], 'international', 0, 1],
       },

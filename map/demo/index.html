@@ -19,15 +19,17 @@
   <div id="map"></div>
   <script type="module">
     // Параметры адреса: ?lang=ru|tg|en  ?category=food  ?tiles=pmtiles://https://…/tajikistan.pmtiles
-    //                   ?3d=0  ?poi=0  ?relief=0  ?terrain=1.3
+    //                   ?extra=pmtiles://https://…/tajikistan-extra.pmtiles  ?3d=0  ?poi=0  ?trees=0
+    //                   ?relief=0  ?terrain=1.3
     import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs';
     import { createStyle, mapOptions, POI_LAYERS, describeFeature, SUBCLASS_RU } from '../src/index.js';
 
     const q = new URLSearchParams(location.search);
     const lang = q.get('lang') || 'ru';
     const tiles = q.get('tiles') || undefined;
+    const extraTiles = q.get('extra') || undefined;
 
-    if (tiles?.startsWith('pmtiles://')) {
+    if ([tiles, extraTiles].some((t) => t?.startsWith('pmtiles://'))) {
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = 'https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js';
@@ -43,7 +45,9 @@
       style: createStyle({
         lang,
         tiles,
+        extraTiles,
         category: q.get('category'),
+        trees: q.get('trees') !== '0',
         buildings3d: q.get('3d') !== '0',
         poi: q.get('poi') !== '0',
         hillshade: q.get('relief') !== '0',
