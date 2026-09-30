@@ -223,8 +223,11 @@ def monument_kind(t):
 
 
 def tajik_flag(t):
-    return (t.get('country') == 'TJ' or t.get('flag:wikidata') == 'Q160124' or t.get('subject:wikidata') == 'Q863'
-            or 'tajikistan' in (t.get('flag:name') or '').lower())
+    """Флаг Таджикистана — если он указан или флаг не указан вовсе (в стране это почти всегда он)."""
+    if t.get('flag:wikidata') or t.get('country') or t.get('flag:name'):
+        return (t.get('country') == 'TJ' or t.get('flag:wikidata') == 'Q160124'
+                or 'tajikistan' in (t.get('flag:name') or '').lower())
+    return True
 
 
 # Ориентиры со своей моделью: по номеру в OSM, а если контур перерисуют — по названию.

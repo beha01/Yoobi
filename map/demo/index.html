@@ -71,7 +71,9 @@
       ...mapOptions({ hash: true }),
     });
     map.getContainer().dataset.yoobiTheme = theme;
-    if (styleOptions.trees3d) enableObjects3D(map, { trees: styleOptions.trees });
+    // Не вышло WebGL2 у самой карты — плоские кроны вместо объёмных, без перезагрузки тайлов.
+    const flat = () => setTimeout(() => { styleOptions.trees3d = false; setTheme(map, theme, styleOptions); });
+    if (styleOptions.trees3d) enableObjects3D(map, { trees: styleOptions.trees, onFail: flat });
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), 'top-right');

@@ -534,15 +534,23 @@ class Objects3DLayer {
  * возвращается сам после setStyle / setTheme. Возвращает функцию, которая его убирает.
  * trees: false — только купола и минареты.
  */
-export function enableObjects3D(map, { source = 'extra', trees = true } = {}) {
+// onFail — если у карты не вышло WebGL2 (старый телефон, выключенная видеокарта): слой
+// убирается сам, а приложение включает плоские кроны — createStyle({ trees3d: false }).
+export function enableObjects3D(map, { source = 'extra', trees = true, onFail = null } = {}) {
   const layer = new Objects3DLayer(map, { source, trees });
+  let failed = false;
   const add = () => {
-    if (map.getLayer(ID) || !map.getSource(source)) return;
+    if (failed || map.getLayer(ID) || !map.getSource(source)) return;
     const layers = map.getStyle()?.layers || [];
     let last = -1;
     layers.forEach((l, i) => { if (l.type === 'fill-extrusion') last = i; });
     const before = last >= 0 && last + 1 < layers.length ? layers[last + 1].id : undefined;
     map.addLayer(layer, before);
+    if (layer.failed) {
+      failed = true;
+      map.removeLayer(ID);
+      onFail?.();
+    }
   };
   // Слой можно добавить, как только разобран стиль (style.load), не дожидаясь тайлов;
   // после setStyle без разницы (diff: false) он добавляется заново.

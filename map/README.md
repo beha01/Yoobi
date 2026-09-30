@@ -167,9 +167,13 @@ map.jumpTo(COUNTRY_VIEW);                                // вся страна
 ```js
 import { createStyle, enableObjects3D, supportsObjects3D } from './map/src/index.js';
 
-const trees3d = supportsObjects3D();   // WebGL2 есть во всех современных браузерах
-const map = new maplibregl.Map({ container: 'map', style: createStyle({ extraTiles, trees3d }), ...mapOptions() });
-if (trees3d) enableObjects3D(map);     // слой сам встаёт за объёмными домами и переживает setTheme
+const options = { extraTiles, trees3d: supportsObjects3D() };   // WebGL2 есть почти во всех браузерах
+const map = new maplibregl.Map({ container: 'map', style: createStyle(options), ...mapOptions() });
+// Слой сам встаёт за объёмными домами и переживает setTheme. Если у карты WebGL2 всё же
+// не вышло (старый телефон), onFail включает плоские кроны — карта работает везде.
+if (options.trees3d) {
+  enableObjects3D(map, { onFail: () => setTimeout(() => setTheme(map, 'light', { ...options, trees3d: false })) });
+}
 ```
 
 Каждая крона и каждый купол — гладкий эллипсоид, нарисованный одним квадратом: форму,
