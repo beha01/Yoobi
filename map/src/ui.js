@@ -17,19 +17,25 @@ const TEXT = {
     placeholder: 'Адрес, улица, место', clear: 'Очистить', close: 'Закрыть', empty: 'Ничего не нашлось',
     emptyHint: 'Попробуйте улицу и номер дома или название места', building: 'Здание', inside: 'В здании',
     nearby: 'Рядом', floors: (n) => `${n} ${plural(n, 'этаж', 'этажа', 'этажей')}`, copy: 'Скопировать координаты',
-    copied: 'Скопировано', results: 'Результаты поиска', km: 'км', m: 'м',
+    copied: 'Скопировано', results: 'Результаты поиска', km: 'км', m: 'м', loading: 'Загружаю поиск…',
+    approx: 'Точное место не указано — показан центр города', source: 'Данные', postcode: 'Индекс',
+    flats: 'Квартиры', nearest: 'Ближайший адрес',
   },
   tg: {
     placeholder: 'Суроға, кӯча, макон', clear: 'Тоза кардан', close: 'Пӯшидан', empty: 'Ҳеҷ чиз ёфт нашуд',
     emptyHint: 'Кӯча ва рақами хона ё номи маконро нависед', building: 'Бино', inside: 'Дар бино',
-    nearby: 'Дар наздикӣ', floors: (n) => `${n} ошёна`, copy: 'Нусхабардории координатаҳо', copied: 'Нусха шуд',
-    results: 'Натиҷаҳои ҷустуҷӯ', km: 'км', m: 'м',
+    nearby: 'Дар наздикӣ', floors: (n) => `${n} ошёна`, copy: 'Нусха гирифтан', copied: 'Нусха шуд',
+    results: 'Натиҷаҳои ҷустуҷӯ', km: 'км', m: 'м', loading: 'Ҷустуҷӯ бор мешавад…',
+    approx: 'Ҷойи дақиқ нишон дода нашудааст', source: 'Маълумот', postcode: 'Индекс', flats: 'Хонаҳо',
+    nearest: 'Суроғаи наздиктарин',
   },
   en: {
     placeholder: 'Address, street, place', clear: 'Clear', close: 'Close', empty: 'Nothing found',
     emptyHint: 'Try a street and house number or a place name', building: 'Building', inside: 'In this building',
     nearby: 'Nearby', floors: (n) => `${n} ${n === 1 ? 'floor' : 'floors'}`, copy: 'Copy coordinates',
-    copied: 'Copied', results: 'Search results', km: 'km', m: 'm',
+    copied: 'Copied', results: 'Search results', km: 'km', m: 'm', loading: 'Loading search…',
+    approx: 'Exact location unknown — city centre shown', source: 'Data', postcode: 'Postcode',
+    flats: 'Flats', nearest: 'Nearest address',
   },
 };
 
@@ -57,6 +63,99 @@ export function prettyHours(value, lang = 'ru') {
     .replace(/([А-Яа-яA-Za-zҶҷӢӣӮӯ])-([А-Яа-яA-Za-zҶҷӢӣӮӯ])/g, '$1–$2')
     .replace(/\s*;\s*/g, '; ')
     .replace(/,(?=\S)/g, ', ');
+}
+
+const DAY_INDEX = { Mo: 0, Tu: 1, We: 2, Th: 3, Fr: 4, Sa: 5, Su: 6 };
+const DAY = '(?:Mo|Tu|We|Th|Fr|Sa|Su)';
+const RULE = new RegExp(`^((?:${DAY}(?:-${DAY})?)(?:\\s*,\\s*${DAY}(?:-${DAY})?)*)?\\s*(.*)$`);
+
+// Разбор opening_hours OSM в недельное расписание: [[начало, конец] в минутах] по дням (пн = 0).
+// Понимает то, что встречается почти всегда: «24/7», «Mo-Fr 09:00-18:00; Sa 10:00-15:00; Su off»,
+// перерывы через запятую и работу за полночь. Остальное (праздники, месяцы) — null.
+function parseHours(value) {
+  const text = String(value || '').trim();
+  if (text === '24/7') return Array.from({ length: 7 }, () => [[0, 1440]]);
+  const week = Array.from({ length: 7 }, () => []);
+  for (const part of text.split(/\s*;\s*/).filter(Boolean)) {
+    const m = part.match(RULE);
+    if (!m) return null;
+    let days = [0, 1, 2, 3, 4, 5, 6];
+    if (m[1]) {
+      days = [];
+      for (const range of m[1].split(/\s*,\s*/)) {
+        const [a, b = a] = range.split('-');
+        for (let i = DAY_INDEX[a], n = 0; n < 7; i = (i + 1) % 7, n++) {
+          days.push(i);
+          if (i === DAY_INDEX[b]) break;
+        }
+      }
+    }
+    const rest = m[2].trim();
+    let spans = [];
+    if (rest === '24/7') spans = [[0, 1440]];
+    else if (rest !== 'off' && rest !== 'closed') {
+      for (const t of rest.split(/\s*,\s*/)) {
+        const tm = t.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+        if (!tm) return null;
+        const from = +tm[1] * 60 + +tm[2];
+        let to = +tm[3] * 60 + +tm[4];
+        if (to <= from) to += 1440; // за полночь
+        spans.push([from, to]);
+      }
+    }
+    for (const d of days) week[d] = spans;
+  }
+  return week;
+}
+
+const STATUS = {
+  ru: { always: 'Открыто круглосуточно', until: (t) => `Открыто до ${t}`, today: (t) => `Закрыто, откроется в ${t}`,
+    tomorrow: (t) => `Закрыто, откроется завтра в ${t}`, later: (d, t) => `Закрыто, откроется в ${d} в ${t}`,
+    days: ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'] },
+  tg: { always: 'Шабонарӯзӣ кушода', until: (t) => `Кушода то ${t}`, today: (t) => `Пӯшида, соати ${t} кушода мешавад`,
+    tomorrow: (t) => `Пӯшида, фардо соати ${t} кушода мешавад`, later: (d, t) => `Пӯшида, ${d} соати ${t} кушода мешавад`,
+    days: ['дш', 'сш', 'чш', 'пш', 'ҷм', 'шб', 'яш'] },
+  en: { always: 'Open 24 hours', until: (t) => `Open until ${t}`, today: (t) => `Closed, opens at ${t}`,
+    tomorrow: (t) => `Closed, opens tomorrow at ${t}`, later: (d, t) => `Closed, opens ${d} at ${t}`,
+    days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
+};
+
+/**
+ * Открыто ли сейчас по opening_hours OSM — по времени Таджикистана (UTC+5).
+ * { open, text } или null, если расписание не разобрать.
+ */
+export function openingStatus(value, { now = new Date(), lang = 'ru', utcOffset = 300 } = {}) {
+  const week = parseHours(value);
+  if (!week) return null;
+  const t = STATUS[lang] || STATUS.ru;
+  const local = new Date(now.getTime() + utcOffset * 60000);
+  const day = (local.getUTCDay() + 6) % 7;
+  const minute = day * 1440 + local.getUTCHours() * 60 + local.getUTCMinutes();
+  // Интервалы на две недели вперёд (и хвост прошлого воскресенья за полночь), смежные — слиты.
+  const spans = [];
+  for (let d = -1; d < 14; d++) {
+    for (const [a, b] of week[(d + 7) % 7]) spans.push([d * 1440 + a, d * 1440 + b]);
+  }
+  spans.sort((x, y) => x[0] - y[0]);
+  const merged = [];
+  for (const s of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s[0] <= last[1]) last[1] = Math.max(last[1], s[1]);
+    else merged.push([...s]);
+  }
+  const hhmm = (m) => `${String(Math.floor((m % 1440) / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const current = merged.find(([a, b]) => a <= minute && minute < b);
+  if (current) {
+    if (current[1] - current[0] >= 7 * 1440) return { open: true, text: t.always };
+    return { open: true, text: t.until(hhmm(current[1])) };
+  }
+  const next = merged.find(([a]) => a > minute);
+  if (!next) return { open: false, text: t.later('', '').replace(/\s+в\s+$/, '').trim() };
+  const nextDay = Math.floor(next[0] / 1440);
+  const text = nextDay === day ? t.today(hhmm(next[0]))
+    : nextDay === day + 1 ? t.tomorrow(hhmm(next[0]))
+      : t.later(t.days[nextDay % 7], hhmm(next[0]));
+  return { open: false, text };
 }
 
 const svg = (d, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
@@ -111,6 +210,13 @@ const CSS = `
 .yoobi-card-head .yoobi-dot svg{width:21px;height:21px}
 .yoobi-card h2{margin:0;font-size:17px;line-height:1.25;font-weight:650;text-wrap:balance}
 .yoobi-card-type{color:var(--y-muted);margin-top:2px}
+.yoobi-card-alt{color:var(--y-muted);font-size:13px;margin-top:1px}
+.yoobi-open{font-weight:600;color:#1e9e57}
+.yoobi-closed{font-weight:600;color:#d64541}
+[data-yoobi-theme="dark"] .yoobi-open{color:#4cc27f}
+[data-yoobi-theme="dark"] .yoobi-closed{color:#f07470}
+.yoobi-note{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--y-chip);color:var(--y-muted);font-size:13px}
+.yoobi-source{margin-top:8px;color:var(--y-muted);font-size:11.5px}
 .yoobi-card .yoobi-icon-btn.yoobi-x{position:absolute;top:10px;right:10px}
 .yoobi-facts{display:grid;gap:8px;margin:12px 0 4px;padding:0;list-style:none}
 .yoobi-facts li{display:flex;gap:10px;align-items:flex-start}
@@ -220,14 +326,23 @@ function pickPolygon(feature, point) {
   }
   return { geometry: { type: 'Polygon', coordinates: best }, properties: feature.properties };
 }
-const PLACE_LAYERS = ['poi-icon', 'poi-label', 'poi-landmark', 'poi-minor', 'park-label', 'airport-label'];
+const PLACE_LAYERS = ['poi-icon', 'poi-label', 'poi-landmark', 'poi-minor', 'park-label', 'airport-label',
+  'business-main', 'business-minor'];
 
 /**
  * Панель поиска и карточки мест. search — результат createSearch()/loadSearch().
  * Возвращает { open(item), close(), setLang(lang), destroy() }.
  */
-export function enableSearchPanel(map, search, { lang = 'ru', placeholder, clickable = true } = {}) {
+export function enableSearchPanel(map, source, { lang = 'ru', placeholder, clickable = true } = {}) {
   let t = TEXT[lang] || TEXT.ru;
+  // Индекс может ещё грузиться (передано обещание): строка поиска появляется сразу.
+  let search = source && typeof source.then !== 'function' ? source : null;
+  if (!search) {
+    Promise.resolve(source).then((s) => {
+      search = s;
+      if (input.value.trim()) run();
+    }, (err) => console.warn('Поиск недоступен:', err));
+  }
   const container = map.getContainer();
   if (!document.getElementById('yoobi-ui-css')) {
     const style = document.createElement('style');
@@ -301,6 +416,11 @@ export function enableSearchPanel(map, search, { lang = 'ru', placeholder, click
   }
 
   function run() {
+    if (!search) {
+      list.innerHTML = `<li class="yoobi-empty">${esc(t.loading)}</li>`;
+      showList(Boolean(input.value.trim()));
+      return;
+    }
     const c = map.getCenter();
     resultsFor = input.value;
     results = search.search(input.value, { center: [c.lng, c.lat], lang, limit: 8 });
@@ -341,23 +461,40 @@ export function enableSearchPanel(map, search, { lang = 'ru', placeholder, click
     open(item);
   }
 
+  const link = (url) => {
+    const href = /^https?:\/\//.test(url) ? url : `https://${url}`;
+    const label = url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+    return `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label.length > 42 ? `${label.slice(0, 40)}…` : label)}</a>`;
+  };
+
+  // Адрес, часы («Открыто до 22:00»), телефоны, сайт и соцсети места.
   function facts(item) {
     const out = [];
     const info = item.info || {};
-    const where = info.addr || (item.kind === 'poi' ? search.reverse(item.lon, item.lat, { lang })?.title : '');
+    const home = item.kind === 'poi' && !item.approx ? search.reverse(item.lon, item.lat, { lang, radius: 40 }) : null;
+    const where = home?.title || info.addr;
     if (where) out.push(`<li>${svg(I.pin)}<span>${esc(where)}${item.place ? `, ${esc(item.place)}` : ''}</span></li>`);
-    if (info.hours) out.push(`<li>${svg(I.clock)}<span>${esc(prettyHours(info.hours, lang))}</span></li>`);
-    if (info.phone) {
-      for (const p of info.phone.split(/\s*;\s*/).slice(0, 3)) {
-        out.push(`<li>${svg(I.phone)}<a href="tel:${esc(p.replace(/[^\d+]/g, ''))}">${esc(p)}</a></li>`);
-      }
+    if (info.hours) {
+      const status = openingStatus(info.hours, { lang });
+      const line = status ? `<span class="${status.open ? 'yoobi-open' : 'yoobi-closed'}">${esc(status.text)}</span><br>` : '';
+      out.push(`<li>${svg(I.clock)}<span>${line}${esc(prettyHours(info.hours, lang))}</span></li>`);
     }
-    if (info.site) {
-      const href = /^https?:\/\//.test(info.site) ? info.site : `https://${info.site}`;
-      const label = info.site.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
-      out.push(`<li>${svg(I.globe)}<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a></li>`);
+    for (const p of (info.phone || '').split(/\s*;\s*/).filter(Boolean).slice(0, 3)) {
+      out.push(`<li>${svg(I.phone)}<a href="tel:${esc(p.replace(/[^\d+]/g, ''))}">${esc(p)}</a></li>`);
     }
-    if (info.insta) out.push(`<li>${svg(I.globe)}<span>${esc(info.insta)}</span></li>`);
+    if (info.site) out.push(`<li>${svg(I.globe)}${link(info.site)}</li>`);
+    for (const social of [info.social, info.insta].filter(Boolean)) out.push(`<li>${svg(I.globe)}${link(social)}</li>`);
+    const list = out.length ? `<ul class="yoobi-facts">${out.join('')}</ul>` : '';
+    const note = item.approx ? `<div class="yoobi-note">${esc(t.approx)}</div>` : '';
+    return list + note;
+  }
+
+  // Сведения о доме: индекс и квартиры, если есть в OSM.
+  function houseFacts(address) {
+    const info = address?.info || {};
+    const out = [];
+    if (info.pc) out.push(`<li>${svg(I.pin)}<span>${esc(t.postcode)} ${esc(info.pc)}</span></li>`);
+    if (info.fl) out.push(`<li>${svg(I.building)}<span>${esc(t.flats)} ${esc(info.fl)}</span></li>`);
     return out.length ? `<ul class="yoobi-facts">${out.join('')}</ul>` : '';
   }
 
@@ -369,13 +506,16 @@ export function enableSearchPanel(map, search, { lang = 'ru', placeholder, click
   }
 
   let related = [];
-  function show({ item, title, type, extra = '', inside = [], nearby = [], at }) {
+  function show({ item, title, alt = '', type, extra = '', inside = [], nearby = [], nearbyTitle = t.nearby, at, marker = true }) {
     related = [...inside, ...nearby];
     const coords = `${at[1].toFixed(5)}, ${at[0].toFixed(5)}`;
+    const sources = new Set([item, ...inside].map((r) => r.source).filter(Boolean));
     card.innerHTML = `<button type="button" class="yoobi-icon-btn yoobi-x" aria-label="${esc(t.close)}" title="${esc(t.close)}">${svg(I.close)}</button>
-      <div class="yoobi-card-head">${dot(item)}<div><h2>${esc(title)}</h2><div class="yoobi-card-type">${esc(type)}</div></div></div>
-      ${extra}${section(`${t.inside} · ${inside.length}`, inside)}${section(t.nearby, nearby)}
-      <div class="yoobi-coords"><span>${coords}</span><button type="button" title="${esc(t.copy)}">${svg(I.copy, 14)}<span>${esc(t.copy)}</span></button></div>`;
+      <div class="yoobi-card-head">${dot(item)}<div><h2>${esc(title)}</h2>${alt ? `<div class="yoobi-card-alt">${esc(alt)}</div>` : ''}
+      <div class="yoobi-card-type">${esc(type)}</div></div></div>
+      ${extra}${section(`${t.inside} · ${inside.length}`, inside)}${section(nearbyTitle, nearby)}
+      <div class="yoobi-coords"><span>${coords}</span><button type="button" title="${esc(t.copy)}">${svg(I.copy, 14)}<span>${esc(t.copy)}</span></button></div>
+      ${sources.size ? `<div class="yoobi-source">${esc(t.source)}: ${[...sources].map(esc).join(', ')}</div>` : ''}`;
     card.setAttribute('aria-label', title);
     card.classList.remove('yoobi-hidden');
     card.querySelector('.yoobi-x').addEventListener('click', close);
@@ -394,13 +534,39 @@ export function enableSearchPanel(map, search, { lang = 'ru', placeholder, click
       row.addEventListener('click', go);
       row.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
     });
+    // У дома булавка не нужна: он подсвечен, а номер на крыше должен оставаться виден.
     pinAt = at;
-    pin.classList.remove('yoobi-hidden');
+    pin.classList.toggle('yoobi-hidden', !marker);
     placePin();
   }
 
+  // Дом из поиска: когда карта доедет, подсветить здание под точкой адреса, убрать булавку
+  // и уточнить этажность по высоте дома, если в OSM её нет.
+  function highlightHouse(item) {
+    const apply = () => {
+      if (pinAt?.[0] !== item.lon || pinAt?.[1] !== item.lat) return; // карточку уже сменили
+      const layers = BUILDING_LAYERS.filter((id) => map.getLayer(id));
+      const hit = layers.length ? map.queryRenderedFeatures(map.project([item.lon, item.lat]), { layers })[0] : null;
+      const building = hit && pickPolygon(hit, [item.lon, item.lat]);
+      if (!building || !inRing([item.lon, item.lat], building.geometry.coordinates[0])) return;
+      setSelection(building);
+      pin.classList.add('yoobi-hidden');
+      const type = card.querySelector('.yoobi-card-type');
+      if (type && !item.info?.lv) type.textContent = houseType(item, building.properties.render_height);
+    };
+    const wait = () => map.once('idle', apply);
+    if (map.isMoving()) map.once('moveend', wait);
+    else wait();
+    map.triggerRepaint();
+  }
+
+  let current = null; // как перерисовать открытую карточку (например, на другом языке)
+
   /** Открыть карточку результата поиска (объект из search.search/nearby/inside). */
   function open(item) {
+    if (!search) return;
+    current = item.id != null ? () => open(search.get(item.id, { lang }) || item) : null;
+    setSelection(null);
     const radius = { address: 40, street: 120, poi: 25 }[item.kind];
     const nearby = radius
       ? search.nearby(item.lon, item.lat, { radius, lang, limit: 7 })
@@ -409,14 +575,24 @@ export function enableSearchPanel(map, search, { lang = 'ru', placeholder, click
     show({
       item,
       title: item.title,
-      type: item.kind === 'poi' ? [item.type, item.place].filter(Boolean).join(' · ') : item.subtitle,
-      extra: facts(item),
+      alt: item.alt,
+      type: item.kind === 'poi' ? [item.type, item.place].filter(Boolean).join(' · ')
+        : item.kind === 'address' ? houseType(item) : item.subtitle,
+      extra: item.kind === 'address' ? houseFacts(item) : facts(item),
       nearby,
       at: [item.lon, item.lat],
     });
+    if (item.kind === 'address') highlightHouse(item);
+  }
+
+  // «Жилой дом · 9 этажей · Душанбе»: этажность из OSM, а если её нет — по высоте дома.
+  function houseType(address, height) {
+    const levels = address?.info?.lv || (height ? Math.max(1, Math.round(height / 3.2)) : 0);
+    return [address?.type || t.building, levels > 1 ? t.floors(levels) : '', address?.place].filter(Boolean).join(' · ');
   }
 
   function close() {
+    current = null;
     card.classList.add('yoobi-hidden');
     pin.classList.add('yoobi-hidden');
     pinAt = null;
@@ -431,13 +607,15 @@ export function enableSearchPanel(map, search, { lang = 'ru', placeholder, click
       if (!feature) return;
       map.addSource('yoobi-selection', { type: 'geojson', data });
       const threeD = map.getLayer('building-3d') && map.getLayoutProperty('building-3d', 'visibility') !== 'none';
+      // Подсветка — под подписями: номер дома и названия остаются поверх неё.
+      const before = map.getLayer('housenumber') ? 'housenumber' : undefined;
       map.addLayer({ id: 'yoobi-selection-fill', type: threeD ? 'fill-extrusion' : 'fill', source: 'yoobi-selection',
         paint: threeD
           ? { 'fill-extrusion-color': '#6FA3F0', 'fill-extrusion-opacity': 0.55, 'fill-extrusion-height': ['get', 'height'],
             'fill-extrusion-base': ['get', 'base'] }
-          : { 'fill-color': '#6FA3F0', 'fill-opacity': 0.35 } });
+          : { 'fill-color': '#6FA3F0', 'fill-opacity': 0.35 } }, before);
       map.addLayer({ id: 'yoobi-selection-line', type: 'line', source: 'yoobi-selection',
-        paint: { 'line-color': '#2F6FE4', 'line-width': 2 } });
+        paint: { 'line-color': '#2F6FE4', 'line-width': 2 } }, before);
       return;
     }
     map.getSource('yoobi-selection').setData(data);
@@ -445,6 +623,10 @@ export function enableSearchPanel(map, search, { lang = 'ru', placeholder, click
 
   // Нажатие на карту: место → его карточка, дом → адрес и организации внутри.
   function onClick(e) {
+    if (!search) return;
+    // Соседние страны под «заморозкой» — их нажатие обрабатывает enableLockedCountries.
+    const locked = ['outside-frost', 'neighbor-lock'].filter((id) => map.getLayer(id));
+    if (locked.length && map.queryRenderedFeatures(e.point, { layers: locked }).length) return;
     const layers = [...PLACE_LAYERS, ...BUILDING_LAYERS].filter((id) => map.getLayer(id));
     const features = map.queryRenderedFeatures(e.point, { layers });
     const placeFeature = features.find((f) => PLACE_LAYERS.includes(f.layer.id));
@@ -465,19 +647,25 @@ export function enableSearchPanel(map, search, { lang = 'ru', placeholder, click
     const hit = features.find((f) => BUILDING_LAYERS.includes(f.layer.id));
     const building = hit && pickPolygon(hit, [e.lngLat.lng, e.lngLat.lat]);
     if (building) {
-      const found = search.inside(building.geometry, { lang });
-      const h = building.properties.render_height;
-      const levels = h ? Math.max(1, Math.round(h / 3.2)) : 0;
-      const address = found.address;
-      const item = address || { kind: 'address', title: t.building, lon: e.lngLat.lng, lat: e.lngLat.lat };
-      const type = [t.building, levels > 1 ? t.floors(levels) : '', address?.place].filter(Boolean).join(' · ');
-      const nearby = found.places.length ? [] : search.nearby(e.lngLat.lng, e.lngLat.lat, { radius: 40, lang, limit: 5 });
-      show({ item, title: address ? address.title : t.building, type, inside: found.places, nearby,
-        at: [e.lngLat.lng, e.lngLat.lat] });
-      setSelection(building);
+      showBuilding(building, [e.lngLat.lng, e.lngLat.lat]);
       return;
     }
     if (!card.classList.contains('yoobi-hidden')) close();
+  }
+
+  // Карточка дома: адрес как в справочниках, тип и этажность, организации внутри.
+  function showBuilding(building, [lon, lat]) {
+    current = () => showBuilding(building, [lon, lat]);
+    const found = search.inside(building.geometry, { lang });
+    const address = found.address;
+    const item = address || { kind: 'address', title: t.building, lon, lat };
+    // Адреса у дома нет — подскажем ближайший, как «рядом с домом 38» в справочниках.
+    const nearest = address ? null : search.reverse(lon, lat, { radius: 50, lang });
+    const nearby = nearest ? [nearest] : found.places.length ? [] : search.nearby(lon, lat, { radius: 40, lang, limit: 5 });
+    show({ item, title: address ? address.title : t.building, alt: address?.alt,
+      type: houseType(address, building.properties.render_height), extra: houseFacts(address),
+      inside: found.places, nearby, nearbyTitle: nearest ? t.nearest : t.nearby, at: [lon, lat], marker: false });
+    setSelection(building);
   }
   const pointer = () => { map.getCanvas().style.cursor = 'pointer'; };
   const reset = () => { map.getCanvas().style.cursor = ''; };
@@ -499,6 +687,7 @@ export function enableSearchPanel(map, search, { lang = 'ru', placeholder, click
       t = TEXT[lang] || TEXT.ru;
       applyText();
       if (input.value.trim()) run();
+      if (current && !card.classList.contains('yoobi-hidden')) current(); // карточка — на новом языке
     },
     destroy() {
       map.off('move', placePin);

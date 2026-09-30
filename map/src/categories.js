@@ -151,6 +151,16 @@ export const SUBCLASS_RU = {
   station: 'Вокзал / станция', halt: 'Остановочный пункт', bus_station: 'Автовокзал',
   bus_stop: 'Остановка', tram_stop: 'Трамвайная остановка', subway_entrance: 'Вход в метро',
   aerodrome: 'Аэропорт', international: 'Международный аэропорт',
+  // Типы организаций Overture Maps (scripts/places.py).
+  financial: 'Финансовые услуги', laboratory: 'Лаборатория', office: 'Офис', craft: 'Мастерская',
+  event: 'Организация праздников', rental: 'Прокат', sports_centre: 'Спортивный центр',
+  fitness_centre: 'Фитнес-клуб', travel_agency: 'Турагентство', estate_agent: 'Агентство недвижимости',
+  sports: 'Спорттовары', second_hand: 'Комиссионный магазин', wholesale: 'Оптовая торговля',
+  stationery: 'Канцтовары', variety_store: 'Магазин низких цен', apartment: 'Апартаменты', resort: 'База отдыха',
+  research_institute: 'НИИ', theme_park: 'Парк развлечений', amusement_arcade: 'Игровой клуб', casino: 'Казино',
+  church: 'Церковь', mosque: 'Мечеть', taxi: 'Такси', lawyer: 'Юридические услуги', laundry: 'Прачечная',
+  courier: 'Доставка', copyshop: 'Типография', industrial: 'Производство', swimming_pool: 'Бассейн',
+  education: 'Образование', tutoring: 'Курсы и репетиторы', shop: 'Магазин',
 };
 
 // Выражение MapLibre, которое вычисляет id категории для объекта слоя poi.

@@ -9,7 +9,7 @@
 // для мобильных приложений (scripts/build.mjs). DOM нужен только готовым элементам
 // интерфейса: enableSearchPanel (ui.js) и enableLockedCountries (locked.js).
 
-import { buildStyle, poiFilter, textFieldFor, LANGUAGES, THEMES } from './style.js';
+import { buildStyle, poiFilter, businessFilter, textFieldFor, LANGUAGES, THEMES } from './style.js';
 import { CATEGORY_BY_ID, OTHER, categoryFor } from './categories.js';
 import { TAJIKISTAN_BOUNDS, DUSHANBE_VIEW } from './tajikistan.js';
 
@@ -82,6 +82,9 @@ export function setPoiCategory(map, category = null) {
   for (const layer of layersWithMeta(map, 'yoobi:poi')) {
     map.setFilter(layer.id, poiFilter(layer.metadata['yoobi:poi'], category));
   }
+  for (const layer of layersWithMeta(map, 'yoobi:business')) {
+    map.setFilter(layer.id, businessFilter(layer.metadata['yoobi:business'], category));
+  }
 }
 
 /**
@@ -119,7 +122,8 @@ export function setGroupVisible(map, group, visible) {
 }
 
 /** Id слоёв с местами — для обработчиков `map.on('click', POI_LAYERS, …)`. */
-export const POI_LAYERS = ['poi-icon', 'poi-label', 'poi-landmark', 'poi-minor', 'park-label', 'airport-label'];
+export const POI_LAYERS = ['poi-icon', 'poi-label', 'poi-landmark', 'poi-minor', 'park-label', 'airport-label',
+  'business-main', 'business-minor'];
 
 /**
  * Описание места из объекта карты (например, из события click по POI_LAYERS):

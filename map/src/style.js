@@ -11,7 +11,8 @@
 
 import { OUTSIDE_MASK, NEIGHBORS } from './borders.js';
 import {
-  AIRPORT, HIDDEN_CLASSES, LANDMARK_CATEGORIES, MINOR_SUBCLASSES, categoryExpression, imageExpression,
+  AIRPORT, CATEGORIES, OTHER, HIDDEN_CLASSES, LANDMARK_CATEGORIES, MINOR_SUBCLASSES, categoryExpression,
+  imageExpression,
 } from './categories.js';
 import { CITIES, REGIONS } from './tajikistan.js';
 
@@ -931,19 +932,27 @@ export function buildStyle(options = {}) {
       },
       paint: { 'text-color': C.roadLabel, 'text-halo-color': C.halo, 'text-halo-width': 2, 'text-halo-blur': 0.3 },
     },
+    // Номер дома на здании, как в 2ГИС и Яндексе: «46/2», «5а». В чужих тайлах номер
+    // бывает записан через обратную черту («32\1») — показываем дробь.
     {
       id: 'housenumber',
       type: 'symbol',
       source: SOURCE,
       'source-layer': 'housenumber',
-      minzoom: 16.5,
+      minzoom: 16,
       layout: {
-        'text-field': ['to-string', ['get', 'housenumber']],
+        'text-field': houseNumberExpression(),
         'text-font': FONT.regular,
-        'text-size': zoomLinear(16.5, 10.5, 18, 12.5),
-        'text-padding': 3,
+        'text-size': zoomLinear(16, 10, 17, 11.5, 19, 14),
+        'text-padding': 2,
+        'text-max-width': 6,
       },
-      paint: { 'text-color': C.houseNumber, 'text-halo-color': C.houseNumberHalo, 'text-halo-width': 1.4 },
+      paint: {
+        'text-color': C.houseNumber,
+        'text-halo-color': C.houseNumberHalo,
+        'text-halo-width': 1.4,
+        'text-opacity': zoomLinear(16, 0, 16.4, 1),
+      },
     },
     ...(extra ? [
       // Названия зданий без мест внутри: «Бизнес-центр …», «Дом печати».
@@ -1070,6 +1079,8 @@ export function buildStyle(options = {}) {
       paint: { 'text-color': C.peak, 'text-halo-color': C.haloSoft, 'text-halo-width': 1.2 },
     },
     // Места ниже подписей населённых пунктов: при нехватке места города важнее.
+    // Организации Overture — ещё ниже: при нехватке места места OSM важнее.
+    ...(o.poi && extra ? businessLayers(o, C) : []),
     ...(o.poi ? poiLayers(o, C) : []),
     {
       id: 'place-minor',
@@ -1324,6 +1335,71 @@ function urbanPointLayers(C) {
 }
 
 // ——— Места ———
+// «32\1» → «32/1»: index-of и slice есть и в MapLibre GL JS, и в MapLibre Native.
+function houseNumberExpression() {
+  const n = ['to-string', ['get', 'housenumber']];
+  return ['let', 'n', n, 'i', ['index-of', '\\', n],
+    ['case', ['>=', ['var', 'i'], 0],
+      ['concat', ['slice', ['var', 'n'], 0, ['var', 'i']], '/', ['slice', ['var', 'n'], ['+', ['var', 'i'], 1]]],
+      ['var', 'n']]];
+}
+
+// Значок организации Overture по категории и подклассу — те же картинки, что у мест OSM.
+function businessImage(prefix) {
+  const expr = ['match', ['get', 'cat']];
+  for (const c of [...CATEGORIES, OTHER]) {
+    const own = `${prefix}-${c.id}-${c.icon}`;
+    const byType = Object.entries(c.icons || {});
+    expr.push(c.id, byType.length
+      ? ['match', ['get', 'subclass'], ...byType.flatMap(([sub, icon]) => [sub, `${prefix}-${c.id}-${icon}`]), own]
+      : own);
+  }
+  expr.push(`${prefix}-other-dot`);
+  return expr;
+}
+
+/** Фильтр организаций Overture: kind 'main' — заметные (rank 1–2), 'minor' — остальные. */
+export function businessFilter(kind, category = null) {
+  const rank = ['coalesce', ['get', 'rank'], 3];
+  const filter = ['all', hasName, kind === 'main' ? ['<=', rank, 2] : ['>', rank, 2]];
+  if (category) filter.push(['==', ['get', 'cat'], category]);
+  return filter;
+}
+
+// Организации из Overture Maps, которых нет в OSM: кафе, магазины, салоны, офисы.
+// Те же «таблетки», что у мест OSM; появляются ближе и уступают им место.
+function businessLayers(o, C) {
+  const name = nameExpression(o.lang);
+  const v = Math.round(((PILL.contentHeight - 1.2 * 12.5) / 2) * 100) / 100;
+  const layout = {
+    'icon-image': businessImage('pill'),
+    'icon-text-fit': 'both',
+    'icon-text-fit-padding': [v, 3, v, 3],
+    'text-field': name,
+    'text-font': FONT.regular,
+    'text-size': 12.5,
+    'text-line-height': 1.2,
+    'text-anchor': 'left',
+    'text-offset': [(PILL.contentLeft - PILL.circleX + 3) / 12.5, 0],
+    'text-max-width': 30,
+    'text-padding': 2,
+    'symbol-sort-key': ['coalesce', ['get', 'rank'], 3],
+  };
+  const layer = (id, kind, minzoom) => ({
+    id,
+    type: 'symbol',
+    source: EXTRA,
+    'source-layer': 'business',
+    minzoom,
+    filter: businessFilter(kind, o.category),
+    metadata: { 'yoobi:business': kind, 'yoobi:group': 'poi', 'yoobi:text': 'name' },
+    layout,
+    paint: { 'text-color': C.poiLabel, 'text-opacity': zoomLinear(minzoom, 0, minzoom + 0.3, 1),
+      'icon-opacity': zoomLinear(minzoom, 0, minzoom + 0.3, 1) },
+  });
+  return [layer('business-minor', 'minor', 17.3), layer('business-main', 'main', 16.2)];
+}
+
 function poiLayers(o, C) {
   const name = nameExpression(o.lang);
   const base = { type: 'symbol', source: SOURCE, 'source-layer': 'poi' };

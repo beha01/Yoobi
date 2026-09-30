@@ -9,10 +9,11 @@
 #   parking   — площадки парковок (name)
 #   point     — светофоры, ворота, шлагбаумы, лавочки, фонтаны, туалеты, вода, парковки (kind, name)
 #   label     — названия зданий без мест внутри (name, name:ru, name:tg, name:en)
+#   business  — организации Overture Maps, которых нет в OSM (name…, cat, subclass, rank)
 
 schema_name: Yoobi extra
 schema_description: Объёмные деревья, подъезды и городские детали для стиля Yoobi Map
-attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
+attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a> · <a href="https://overturemaps.org" target="_blank">Overture Maps</a>'
 
 sources:
   osm:
@@ -108,3 +109,19 @@ layers:
           - key: name:ru
           - key: name:tg
           - key: name:en
+  - id: business
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: business
+        attributes:
+          - key: name
+          - key: name:ru
+          - key: name:tg
+          - key: name:en
+          - key: cat
+          - key: subclass
+          - key: rank
+            type: integer

@@ -26,5 +26,5 @@ jobs:
           npm ci
           npm run build
           npm test
-          python3 -m py_compile scripts/extras.py
-          git diff --exit-code -- styles sprites/yoobi.json sprites/yoobi@2x.json
+          python3 -m py_compile scripts/extras.py scripts/places.py scripts/overture.py
+          git diff --exit-code -- styles sprites/yoobi.json sprites/yoobi@2x.json sprites/yoobi-dark.json sprites/yoobi-dark@2x.json

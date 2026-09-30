@@ -2,7 +2,8 @@
 """Готовит данные для дополнительных тайлов Yoobi Map из выгрузки OpenStreetMap.
 
   python3 scripts/extras.py data/sources/tajikistan.osm.pbf data/extras.osm.pbf data/tajikistan-mask.geojson \\
-      [data/tajikistan-clipped.osm.pbf] [--search=data/tajikistan-search.json] [--decor]
+      [data/tajikistan-clipped.osm.pbf] [--search=data/tajikistan-search.json] \\
+      [--overture=data/sources/overture-places.jsonl] [--decor]
 
 Что получается (extras.osm.pbf Planetiler режет в тайлы по схеме tiles/extra.yml):
 
@@ -25,6 +26,11 @@
     и названия зданий без организаций (одно на комплекс).
   * Индекс поиска (--search=…): населённые пункты, улицы, дома с номерами и
     организации с типом, часами работы, телефоном и сайтом — для src/search.js.
+    Адреса записываются так, как их пишут 2ГИС и Яндекс Карты: «улица Бободжана
+    Гафурова, 46/2» (см. scripts/places.py); у дома — тип здания, этажность, индекс.
+  * Организации Overture Maps (--overture=…, scripts/overture.py) сверяются с OSM:
+    совпавшие дополняют места OSM телефонами и сайтами, новые попадают в поиск и в
+    слой business дополнительных тайлов.
   * Маска страны: контур Таджикистана из OSM (admin_level=2) для «заморозки» соседей.
   * Выгрузка без подписей соседних стран (четвёртый аргумент) — из неё собираются
     основные тайлы. За границей убираются названия, адреса, населённые пункты и
@@ -39,11 +45,14 @@
 import json
 import math
 import random
+import re
 import sys
 from collections import defaultdict
 
 import osmium
 from osmium.osm.mutable import Node, Way
+
+from places import StreetIndex, address_names, house_number, merge_overture, ru_street, tidy
 
 COUNTRY = 'TJ'
 DECOR = '--decor' in sys.argv
@@ -295,12 +304,27 @@ def write_clipped(src, dst, country):
     w = osmium.SimpleWriter(dst, overwrite=True, header=header)
     outside_ways = set()
     cleaned = 0
+    def fixed(o):
+        """Номер дома в одном виде: «32\\1» → «32/1»; вместо номера — название («Кафе Сахо») → убрать."""
+        value = o.tags.get('addr:housenumber')
+        if value is None:
+            return o
+        number = house_number(value)
+        if number == value:
+            return o
+        tags = {t.k: t.v for t in o.tags if t.k != 'addr:housenumber'}
+        if number:
+            tags['addr:housenumber'] = number
+        return o.replace(tags=tags)
+
     for o in osmium.FileProcessor(src).with_locations():
         if o.is_node():
-            if len(o.tags) == 0 or country.contains(o.location.lon, o.location.lat) or (
+            if len(o.tags) == 0:
+                w.add_node(o)
+            elif country.contains(o.location.lon, o.location.lat) or (
                     o.tags.get('natural') in ('peak', 'volcano')
                     and country.near_border(o.location.lon, o.location.lat)):
-                w.add_node(o)
+                w.add_node(fixed(o))
             else:
                 w.add_node(o.replace(tags={}))
                 cleaned += 1
@@ -317,14 +341,14 @@ def write_clipped(src, dst, country):
                     w.add_way(o.replace(tags={t.k: t.v for t in o.tags if not is_label_key(t.k)}))
                     cleaned += 1
                     continue
-            w.add_way(o)
+            w.add_way(fixed(o))
         elif o.is_relation():
             ways = [m.ref for m in o.members if m.type == 'w']
             if ways and all(r in outside_ways for r in ways) and any(is_label_key(t.k) for t in o.tags):
                 w.add_relation(o.replace(tags={t.k: t.v for t in o.tags if not is_label_key(t.k)}))
                 cleaned += 1
             else:
-                w.add_relation(o)
+                w.add_relation(fixed(o))
     w.close()
     return cleaned
 
@@ -543,9 +567,42 @@ def poi_details(t):
         if v:
             info[key] = v[:120]
     street = t.get('addr:street') or t.get('addr:place')
-    if street and t.get('addr:housenumber'):
-        info['addr'] = f"{street}, {t['addr:housenumber']}"
+    number = house_number(t.get('addr:housenumber'))
+    if street and number:
+        info['_addr'] = (split_street(street, number), number)
     return kind, info
+
+
+def address_info(t):
+    """Сведения о доме для карточки: тип здания, этажность, индекс, квартиры."""
+    info = {}
+    if t.get('building') and t['building'] != 'no':
+        info['b'] = t['building']
+    levels = (t.get('building:levels') or '').replace(',', '.')
+    try:
+        if 0 < float(levels) < 200:
+            info['lv'] = int(round(float(levels)))
+    except ValueError:
+        pass
+    for key, tag in (('pc', 'addr:postcode'), ('fl', 'addr:flats')):
+        if t.get(tag):
+            info[key] = t[tag][:40]
+    return info
+
+
+def split_street(street, number):
+    """Улица без номера дома, если его вписали и туда: «улица Бободжана Гафурова,10А» → «улица Бободжана Гафурова»."""
+    m = re.match(r'^(.*?)[,\s]+(?:д\.?\s*|дом\s*)?(\d+[^\s,]*)$', street or '')
+    if m and m.group(1) and house_number(m.group(2)).lower() == number.lower():
+        return m.group(1).strip(' ,')
+    return street
+
+
+def add_address(addresses, lon, lat, t):
+    street = t.get('addr:street') or t.get('addr:place')
+    number = house_number(t.get('addr:housenumber'))
+    if street and number:
+        addresses.append((lon, lat, split_street(street, number), number, address_info(t)))
 
 
 def ring_area(ring):
@@ -561,7 +618,7 @@ class Search:
         self.places = []    # (класс, lon, lat, имена)
         self.pois = []      # (lon, lat, имена, категория, тип, сведения)
         self.streets = defaultdict(list)  # (имя, клетка 3 км) -> [(lon, lat, имена)]
-        self.addresses = []  # (lon, lat, улица, дом)
+        self.addresses = []  # (lon, lat, улица, дом, сведения о доме)
 
     @staticmethod
     def names(t):
@@ -613,16 +670,29 @@ class Search:
         for (_key, _i, _j), ways in self.streets.items():
             mx = sum(w[0] for w in ways) / len(ways)
             my = sum(w[1] for w in ways) / len(ways)
-            lon, lat, names = min(ways, key=lambda w: (w[0] - mx) ** 2 + (w[1] - my) ** 2)
-            add(names, 'street', '', lon, lat)
+            lon, lat, (name, ru, tg, en) = min(ways, key=lambda w: (w[0] - mx) ** 2 + (w[1] - my) ** 2)
+            # «ул Абдукодир Исмоилов», «кӯчаи Айнӣ» → «улица …», таджикское имя — вторым.
+            add((name, ru_street(ru or name), tg or tidy(name), en), 'street', '', lon, lat)
+        streets = StreetIndex([w for ways in self.streets.values() for w in ways], to_xy)
         for lon, lat, names, cat, typ, info in self.pois:
+            if '_addr' in info:
+                street, number = info.pop('_addr')
+                info['addr'] = address_names(street, number, streets.find(street, lon, lat))[0]
             add(names, 'poi', cat, lon, lat, typ, info)
-        seen = set()
-        for lon, lat, street, number in self.addresses:
+        # Адрес как в справочниках: «улица Бободжана Гафурова, 46/2» — улица сверяется с
+        # ближайшей улицей OSM того же названия, у неё берутся русское и английское имя.
+        seen, matched = set(), 0
+        for lon, lat, street, number, info in self.addresses:
             key = (street, number, round(lon, 3), round(lat, 3))  # дом и точка на нём — один адрес
-            if key not in seen:
-                seen.add(key)
-                add((f'{street}, {number}', '', '', ''), 'address', '', lon, lat)
+            if key in seen:
+                continue
+            seen.add(key)
+            found = streets.find(street, lon, lat)
+            matched += found is not None
+            ru, tg, en = address_names(street, number, found)
+            extra = {k: v for k, v in info.items() if k != 'b'}
+            add(('', ru, tg, en), 'address', '', lon, lat, info.get('b', ''), extra or None)
+        self.matched = (matched, len(seen))
         cities = [(names[1] or names[0]) for _cls, _lon, _lat, names in settlements]
         with open(path, 'w', encoding='utf-8') as f:
             json.dump({'version': 2, 'fields': ['name', 'name_tg', 'name_en', 'kind', 'category', 'type', 'lon', 'lat',
@@ -643,6 +713,7 @@ class Details:
         self.barriers = []          # ([(lon, lat)], вид)
         self.parkings = []          # ([(lon, lat)], имя)
         self.labels = []            # (lon, lat, имена, площадь) — здания с названием
+        self.businesses = []        # (lon, lat, имена, категория, подкласс, ранг) — из Overture
         self.search = Search()
 
     def node(self, o):
@@ -661,8 +732,8 @@ class Details:
                 self.search.places.append((t['place'], lon, lat, Search.names(t)))
             elif is_poi(t):
                 self.search.pois.append((lon, lat, Search.names(t), poi_category(t), *poi_details(t)))
-        if 'addr:housenumber' in t and ('addr:street' in t or 'addr:place' in t):
-            self.search.addresses.append((lon, lat, t.get('addr:street') or t['addr:place'], t['addr:housenumber']))
+        if 'addr:housenumber' in t:
+            add_address(self.search.addresses, lon, lat, t)
 
     def way(self, o, coords, refs):
         t = o.tags
@@ -703,8 +774,8 @@ class Details:
                 self.search.pois.append((lon, lat, Search.names(t), poi_category(t), *poi_details(t)))
             elif 'building' in t:
                 self.labels.append((lon, lat, Search.names(t), ring_area(ring)))
-        if 'building' in t and 'addr:housenumber' in t and ('addr:street' in t or 'addr:place' in t):
-            self.search.addresses.append((lon, lat, t.get('addr:street') or t['addr:place'], t['addr:housenumber']))
+        if 'building' in t and 'addr:housenumber' in t:
+            add_address(self.search.addresses, lon, lat, t)
 
     def building_labels(self):
         """Одно название на комплекс: части здания с тем же именем ближе 250 м не подписываются."""
@@ -966,6 +1037,9 @@ def write(dst, trees, entrances, details, rnd):
         node(lon, lat, {'yoobi': 'point', 'kind': kind, **({'name': name} if name else {})})
     for lon, lat, names in details.building_labels():
         node(lon, lat, {'yoobi': 'label', **{k: v for k, v in zip(NAME_KEYS, names) if v}})
+    for lon, lat, names, cat, subclass, rank in details.businesses:
+        node(lon, lat, {'yoobi': 'business', 'cat': cat, 'subclass': subclass, 'rank': str(rank),
+                        **{k: v for k, v in zip(NAME_KEYS, names) if v}})
     shapes = []  # (id точек, теги) — линии и многоугольники деталей
     for coords, kind in details.crossing_lines():
         shapes.append(([node(*p) for p in coords], {'yoobi': 'crossing', 'kind': kind}))
@@ -1052,7 +1126,7 @@ def header_latitude(path):
     return (box.bottom_left.lat + box.top_right.lat) / 2 if box.valid() else 38.5
 
 
-def main(src, dst, mask_path, clipped_path=None, search_path=None):
+def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path=None):
     set_projection(header_latitude(src))
     rnd = random.Random(7)
     nature = read_nature(src)
@@ -1078,6 +1152,12 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None):
                         active.add((tx, ty))
     details = Details()
     ob = read_obstacles(src, active, nature.entrances, details)
+    if overture_path:
+        with open(overture_path, encoding='utf-8') as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        details.businesses, stats = merge_overture(records, details.search.pois, details.search.addresses,
+                                                   country.contains, to_xy)
+        print(f'Overture: {len(records)} мест, ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
     trees = plant(nature, plans, ob, places, rnd)
     # Подъезды не на контуре здания — без направления.
     entrances = ob.entrance_out + [(lon, lat, None, tags) for lon, lat, tags in nature.entrances.values()]
@@ -1097,7 +1177,9 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None):
           f'парковок: {len(details.parkings)}, названий зданий: {len(details.building_labels())}, '
           f'точек: {dict(sorted(kinds.items()))}')
     if search_path:
-        print(f'поиск: {search_path} ({details.search.write(search_path, country)} записей)')
+        count = details.search.write(search_path, country)
+        matched, total = details.search.matched
+        print(f'поиск: {search_path} ({count} записей; адресов {total}, улица найдена у {matched})')
     if clipped_path:
         if not nature.country:
             print(f'Границы {COUNTRY} в выгрузке нет — подписи соседей не убираются', file=sys.stderr)
@@ -1107,5 +1189,6 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None):
 
 if __name__ == '__main__':
     sys.setrecursionlimit(100000)
-    search = next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--search=')), None)
-    main(*[a for a in sys.argv[1:] if not a.startswith('--')][:4], search_path=search)
+    opts = dict(a[2:].split('=', 1) for a in sys.argv[1:] if a.startswith('--') and '=' in a)
+    main(*[a for a in sys.argv[1:] if not a.startswith('--')][:4], search_path=opts.get('search'),
+         overture_path=opts.get('overture'))

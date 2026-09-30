@@ -1,14 +1,19 @@
 name: map-data
-# Собирает карту всего Таджикистана из свежей выгрузки OpenStreetMap и сохраняет
-# результат в ветку map-data (файлы больше 95 МБ режутся на части *.partNN).
-# Без сторонних actions: Java 21 и Python уже есть на ubuntu-24.04.
-# Запуск (повтор): при изменении скриптов сборки или вручную (Actions → map-data → Run workflow).
+# Собирает карту всего Таджикистана из свежей выгрузки OpenStreetMap и организаций
+# Overture Maps и сохраняет результат в ветку map-data (файлы больше 95 МБ режутся
+# на части *.partNN). Без сторонних actions: Java 21 и Python уже есть на ubuntu-24.04.
+# Запуск: каждую ночь (свежие адреса, дома и организации — Geofabrik обновляет выгрузку
+# ежедневно), при изменении скриптов сборки или вручную (Actions → map-data → Run workflow).
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '17 21 * * *'   # 02:17 по Душанбе
   push:
     paths:
       - 'map/scripts/build-tiles.sh'
       - 'map/scripts/extras.py'
+      - 'map/scripts/places.py'
+      - 'map/scripts/overture.py'
       - 'map/tiles/**'
       - '.github/workflows/map-data.yml'
 
@@ -31,14 +36,14 @@ jobs:
         run: |
           export JAVA_HOME="$JAVA_HOME_21_X64" PATH="$JAVA_HOME_21_X64/bin:$PATH"
           java -version
-          python3 -m pip install --quiet --break-system-packages osmium || python3 -m pip install --quiet osmium
+          python3 -m pip install --quiet --break-system-packages osmium pyarrow || python3 -m pip install --quiet osmium pyarrow
           PLANETILER_MEMORY=6g ./scripts/build-tiles.sh
       - name: Сохранить в ветку map-data
         working-directory: repo/map
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           cp data/sources/tajikistan.osm.pbf data/tajikistan.pmtiles data/tajikistan-extra.pmtiles "$RUNNER_TEMP/out/"
-          cp data/tajikistan-mask.geojson "$RUNNER_TEMP/out/" 2>/dev/null || true
+          cp data/tajikistan-mask.geojson data/tajikistan-search.json "$RUNNER_TEMP/out/" 2>/dev/null || true
           cd "$RUNNER_TEMP/out"
           sha256sum * > SHA256SUMS.txt
           for f in *.pbf *.pmtiles; do

@@ -7,6 +7,9 @@
 #   data/tajikistan-mask.geojson   — точный контур страны для «заморозки» соседей
 #   data/tajikistan-search.json    — индекс поиска: города, улицы, дома и организации (src/search.js)
 #
+# Организации берутся из OSM и из открытой базы Overture Maps (scripts/overture.py,
+# лицензии CDLA-Permissive-2.0 / Apache-2.0 / CC0): без неё — OVERTURE=0.
+#
 # Нужна Java 21+ (planetiler.jar скачается сам) или Docker.
 # Первый запуск скачивает вспомогательные данные (~1 ГБ), дальше — только выгрузку OSM.
 # Памяти хватает 2–4 ГБ, сборка занимает несколько минут.
@@ -110,9 +113,26 @@ if ! python3 -c 'import osmium; osmium.FileProcessor' 2>/dev/null; then
   data/.venv/bin/pip install --quiet 'osmium>=4'
   PY=data/.venv/bin/python
 fi
+# Организации Overture Maps: из мировой базы читаются только куски, покрывающие страну
+# (~50 МБ). Если сеть до S3 недоступна, сборка продолжается без них.
+OVERTURE_ARGS=()
+if [[ "${OVERTURE:-1}" == 1 ]]; then
+  if ! "$PY" -c 'import pyarrow' 2>/dev/null; then
+    [[ -d data/.venv ]] || python3 -m venv data/.venv
+    data/.venv/bin/pip install --quiet 'osmium>=4' pyarrow
+    PY=data/.venv/bin/python
+  fi
+  if "$PY" scripts/overture.py data/sources/overture-places.jsonl.tmp; then
+    mv data/sources/overture-places.jsonl.tmp data/sources/overture-places.jsonl
+  else
+    echo "Overture Maps недоступен — организации только из OSM" >&2
+  fi
+  [[ -f data/sources/overture-places.jsonl ]] && OVERTURE_ARGS=(--overture=data/sources/overture-places.jsonl)
+fi
+
 rm -f data/extras.osm.pbf
 "$PY" scripts/extras.py "$PBF" data/extras.osm.pbf "data/$AREA-mask.geojson" "data/$AREA-clipped.osm.pbf" \
-  --search="data/$AREA-search.json"
+  --search="data/$AREA-search.json" ${OVERTURE_ARGS[@]+"${OVERTURE_ARGS[@]}"}
 
 # 3. Основные тайлы — из копии без подписей соседей, поэтому стиль рисует подписи
 #    Таджикистана поверх «заморозки». В подписи попадают только русский, таджикский

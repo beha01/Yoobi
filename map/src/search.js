@@ -39,6 +39,8 @@ const STOP = new Set([
   'город', 'г', 'шаҳри', 'шаҳр', 'село', 'деҳа', 'кишлак', 'посёлок', 'пгт', 'дом', 'д', 'хонаи',
 ].map(normalize));
 
+const DISTRICT = new Set(['мкр', 'мкрн', 'микрорайон'].map(normalize));
+
 // Рубрики: «аптеки», «дорухона», «pharmacy» находят аптеки, даже если слова нет в названии.
 const RUBRICS = {
   food: 'еда кафе ресторан столовая чайхана ошхона қаҳвахона тарабхона restaurant cafe food',
@@ -92,6 +94,25 @@ const KIND_LABEL = {
   ru: { street: 'Улица', address: 'Здание' },
   tg: { street: 'Кӯча', address: 'Бино' },
   en: { street: 'Street', address: 'Building' },
+};
+
+// Тип здания (building=* в OSM) — для карточки дома, как «Жилой дом · 9 этажей» в 2ГИС.
+export const BUILDING_RU = {
+  apartments: 'Жилой дом', residential: 'Жилой дом', dormitory: 'Общежитие', house: 'Частный дом',
+  detached: 'Частный дом', semidetached_house: 'Частный дом', terrace: 'Жилой дом', bungalow: 'Частный дом',
+  commercial: 'Коммерческое здание', retail: 'Торговое здание', office: 'Офисное здание', kiosk: 'Киоск',
+  supermarket: 'Супермаркет', industrial: 'Производственное здание', warehouse: 'Склад', garage: 'Гараж',
+  garages: 'Гаражи', service: 'Техническое здание', school: 'Школа', kindergarten: 'Детский сад',
+  university: 'Университет', college: 'Колледж', hospital: 'Больница', clinic: 'Поликлиника',
+  mosque: 'Мечеть', church: 'Церковь', cathedral: 'Собор', synagogue: 'Синагога', religious: 'Религиозное здание',
+  hotel: 'Гостиница', government: 'Госучреждение', public: 'Общественное здание', civic: 'Общественное здание',
+  train_station: 'Вокзал', transportation: 'Транспортное здание', stadium: 'Стадион', sports_hall: 'Спортзал',
+  sports_centre: 'Спортивный центр', construction: 'Строящееся здание', ruins: 'Руины', farm: 'Сельский дом',
+  barn: 'Хозпостройка', shed: 'Хозпостройка', roof: 'Навес', yes: 'Здание',
+};
+const BUILDING_OTHER = {
+  tg: { apartments: 'Бинои истиқоматӣ', house: 'Хонаи шахсӣ', yes: 'Бино' },
+  en: { apartments: 'Apartment building', house: 'House', yes: 'Building' },
 };
 
 const human = (s) => (s ? s[0].toUpperCase() + s.slice(1).replace(/_/g, ' ') : '');
@@ -150,6 +171,8 @@ export function createSearch(data) {
     place: row[f.place] >= 0 ? places[row[f.place]] || '' : '',
     info: (f.info !== undefined && row[f.info]) || null,
   }));
+  // Места Overture без точного адреса стоят в центре города: ищутся, но не «рядом» и не «в здании».
+  const approx = (it) => it.info?.approx === 1;
 
   // Токены → объекты; отсортированные словари для поиска по началу слова:
   // слова названий и слова рубрик (тип места), у рубрик вес ниже.
@@ -185,6 +208,7 @@ export function createSearch(data) {
 
   const grid = new Map();
   for (const it of items) {
+    if (approx(it)) continue;
     const key = `${Math.floor(it.lon / CELL)}:${Math.floor(it.lat / CELL)}`;
     let cell = grid.get(key);
     if (!cell) grid.set(key, (cell = []));
@@ -223,8 +247,10 @@ export function createSearch(data) {
     let tokens = all.filter((t) => !STOP.has(t));
     if (!tokens.length) tokens = all;
     if (!tokens.length) return [];
-    const numbers = withNumbers ? tokens.filter((t) => /^\d/.test(t)) : [];
-    const words = tokens.filter((t) => !/^\d/.test(t));
+    // «12 мкр», «мкр 8»: число — название микрорайона, а не номер дома.
+    const district = all.some((t) => DISTRICT.has(t));
+    const numbers = withNumbers && !district ? tokens.filter((t) => /^\d/.test(t)) : [];
+    const words = district ? tokens : tokens.filter((t) => !/^\d/.test(t));
     const whole = normalize(text).trim();
 
     // Слова ищем в словаре; номер дома — отдельно: в адресах он хранится целиком («18/1», «5а»).
@@ -254,6 +280,7 @@ export function createSearch(data) {
           else continue;
         }
       } else if (it.kind === 'address') score -= 12; // без номера дома улица важнее отдельных домов
+      if (approx(it)) score -= 8;
       if (it.norm === whole) score += 25;
       else if (it.norm.startsWith(whole)) score += 12;
       if (center) {
@@ -276,19 +303,25 @@ export function createSearch(data) {
 
   function typeLabel(it, lang) {
     if (it.kind === 'place') return PLACE_LABEL[lang][it.category] || PLACE_LABEL[lang].village;
+    if (it.kind === 'address' && it.type) {
+      const other = BUILDING_OTHER[lang];
+      return (other ? other[it.type] || other.yes : BUILDING_RU[it.type]) || KIND_LABEL[lang].address;
+    }
     if (it.kind !== 'poi') return KIND_LABEL[lang][it.kind];
     if (lang === 'en') return human(it.type) || human(it.category);
     return SUBCLASS_RU[it.type] || CATEGORY_ONE[it.category] || 'Организация';
   }
 
   function present(it, lang, center) {
-    const where = it.kind === 'poi' && it.info?.addr ? it.info.addr : it.place;
+    // Адрес места — если в нём есть номер дома; «Согдийская область» вместо адреса — это не адрес.
+    const where = it.kind === 'poi' && /\d/.test(it.info?.addr || '') ? it.info.addr : it.place;
     const self = it.kind === 'place' && where === it.name;
-    const name = title(it, lang);
     return {
       id: it.id,
-      // «кӯчаи Айнӣ, 38» → «Кӯчаи Айнӣ, 38»: улицы и дома в OSM часто с маленькой буквы.
-      title: it.kind === 'address' || it.kind === 'street' ? name[0].toUpperCase() + name.slice(1) : name,
+      // Адрес — как в 2ГИС и Яндексе: «улица Бободжана Гафурова, 46/2» (тип улицы с маленькой буквы).
+      title: title(it, lang),
+      // Второе написание: таджикское для русского интерфейса и наоборот («кӯчаи Бобоҷон Ғафуров, 46/2»).
+      alt: lang === 'tg' ? (it.name_tg ? it.name : '') : it.name_tg,
       type: typeLabel(it, lang),
       subtitle: [typeLabel(it, lang), self ? '' : where].filter(Boolean).join(' · '),
       kind: it.kind,
@@ -298,6 +331,8 @@ export function createSearch(data) {
       lon: it.lon,
       lat: it.lat,
       info: it.info,
+      approx: approx(it),
+      source: it.info?.src === 'overture' ? 'Overture Maps' : 'OpenStreetMap',
       distance: center ? distance(center[0], center[1], it.lon, it.lat) : null,
     };
   }
@@ -354,6 +389,11 @@ export function createSearch(data) {
         if (out.length >= limit) break;
       }
       return out;
+    },
+
+    /** Запись по id (из результата поиска) — например, чтобы показать её на другом языке. */
+    get(id, { lang = 'ru' } = {}) {
+      return items[id] ? present(items[id], lang) : null;
     },
 
     /** Ближайший адрес к точке (по умолчанию не дальше 60 м) или null. */

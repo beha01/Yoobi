@@ -105,16 +105,20 @@
     const searchUrl = q.get('search') || (tiles?.includes('/data/tajikistan.pmtiles')
       ? tiles.replace(/^pmtiles:\/\//, '').replace('tajikistan.pmtiles', 'tajikistan-search.json')
       : null);
-    map.once('load', async () => {
+    map.once('load', () => {
       enableLockedCountries(map, { lang });
-      try {
-        if (!searchUrl) throw new Error('нет индекса (параметр ?search=)');
-        window.search = await loadSearch(searchUrl);
-        window.panel = enableSearchPanel(map, window.search, { lang });
-      } catch (err) {
-        console.warn('Поиск недоступен:', err.message);
+      if (!searchUrl) {
         popupOnClick();
+        return;
       }
+      // Строка поиска появляется сразу, индекс (~3 МБ) догружается следом и не держит карту.
+      const search = loadSearch(searchUrl);
+      window.panel = enableSearchPanel(map, search, { lang });
+      search.then((s) => { window.search = s; }, (err) => {
+        console.warn('Поиск недоступен:', err.message);
+        window.panel.destroy();
+        popupOnClick();
+      });
     });
 
     // Без индекса поиска — простое всплывающее название и тип места.
