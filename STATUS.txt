@@ -1,0 +1,3 @@
+blocked: 000
+curl: (56) CONNECT tunnel failed, response 403
+(https://download.geofabrik.de/asia/tajikistan-latest.osm.pbf, egress proxy denied host download.geofabrik.de)
