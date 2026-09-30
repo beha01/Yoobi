@@ -27,6 +27,10 @@ const CSS = `
   background:#2F2A25;color:#fff}
 .yoobi-lock-toast.show .yoobi-lock-icon svg{animation:yoobi-shake .5s .15s}
 @keyframes yoobi-shake{20%{transform:rotate(-14deg)}40%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(4deg)}}
+[data-yoobi-theme="dark"] .yoobi-lock-toast{background:rgba(35,40,48,.74);color:#E8EBEF;
+  box-shadow:0 10px 30px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.08)}
+[data-yoobi-theme="dark"] .yoobi-lock-toast span{color:#9AA3AE}
+[data-yoobi-theme="dark"] .yoobi-lock-icon{background:#E8EBEF;color:#232830}
 .yoobi-lock-pulse{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;pointer-events:none;
   background:rgba(255,255,255,.9);box-shadow:0 0 0 0 rgba(143,123,174,.55);animation:yoobi-pulse .8s ease-out forwards}
 @keyframes yoobi-pulse{to{transform:scale(3.2);opacity:0;box-shadow:0 0 0 14px rgba(143,123,174,0)}}

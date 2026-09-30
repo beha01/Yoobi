@@ -2,7 +2,7 @@
 """Готовит данные для дополнительных тайлов Yoobi Map из выгрузки OpenStreetMap.
 
   python3 scripts/extras.py data/sources/tajikistan.osm.pbf data/extras.osm.pbf data/tajikistan-mask.geojson \\
-      [data/tajikistan-clipped.osm.pbf] [--decor]
+      [data/tajikistan-clipped.osm.pbf] [--search=data/tajikistan-search.json] [--decor]
 
 Что получается (extras.osm.pbf Planetiler режет в тайлы по схеме tiles/extra.yml):
 
@@ -19,14 +19,20 @@
     Реальные деревья из OSM не выбрасываются.
   * Подъезды: точка чуть перед дверью, номер (ref), квартиры (addr:flats) и угол
     стены — стиль рисует стрелку, указывающую на вход.
+  * Городские детали вблизи: «зебры» поперёк дороги (из точек highway=crossing и
+    линий footway=crossing), заборы, стены и живые изгороди (объёмные), площадки
+    парковок, светофоры, ворота и шлагбаумы, лавочки, фонтаны, туалеты, питьевая вода
+    и названия зданий без организаций (одно на комплекс).
+  * Индекс поиска (--search=…): населённые пункты, улицы, дома с номерами и
+    организации с типом, часами работы, телефоном и сайтом — для src/search.js.
   * Маска страны: контур Таджикистана из OSM (admin_level=2) для «заморозки» соседей.
   * Выгрузка без подписей соседних стран (четвёртый аргумент) — из неё собираются
     основные тайлы. За границей убираются названия, адреса, населённые пункты и
     места, а дороги, дома и реки остаются и видны под «заморозкой». Поэтому стиль
     рисует подписи Таджикистана поверх «заморозки», и у границы они не обрезаются.
 
-Выгрузка читается три раза: леса, сады, вода и деревья; дома и дороги — только там,
-где сажаются деревья; копия без подписей соседей. Вся страна — несколько минут.
+Выгрузка читается три раза: леса, сады, вода и деревья; дома, дороги, детали и
+поиск; копия без подписей соседей. Вся страна — около трёх минут.
 
 Нужен только pyosmium 4+: pip install osmium
 """
@@ -63,6 +69,20 @@ ROAD_CLASSES = set(STREET_CLASSES) | {'motorway', 'trunk', 'motorway_link', 'tru
 PATH_CLASSES = {'footway', 'path', 'cycleway', 'steps', 'track', 'bridleway'}
 STREET_SPACING = 12.0
 CELL = 60.0  # ячейка индекса препятствий, м
+# Городские мелочи, как на подробных картах: светофоры, ворота, шлагбаумы, лавочки, фонтаны.
+POINT_KINDS = {
+    'traffic_signals': 'signals',
+    'gate': 'gate', 'swing_gate': 'gate', 'sliding_gate': 'gate', 'kissing_gate': 'gate',
+    'lift_gate': 'lift_gate',
+    'bench': 'bench', 'fountain': 'fountain', 'toilets': 'toilets', 'drinking_water': 'water',
+    'parking': 'parking',
+}
+# Заборы и стены: высота и толщина объёмной полосы, м.
+BARRIERS = {'wall': (2.2, 0.5), 'city_wall': (4.0, 1.2), 'retaining_wall': (1.0, 0.5), 'fence': (1.6, 0.25),
+            'hedge': (1.2, 0.9)}
+NO_CROSSING = {'no', 'unmarked', 'informal', 'impossible'}
+POI_KEYS = ('amenity', 'shop', 'tourism', 'office', 'leisure', 'craft', 'healthcare', 'historic')
+NAME_KEYS = ('name', 'name:ru', 'name:tg', 'name:en')
 BAND = 50.0  # полоса индекса рёбер воды, м
 
 # Проекция: метры на плоскости около средней широты выгрузки (задаётся в main).
@@ -453,6 +473,256 @@ def plan(fills, places, water, real_per_tile):
     return out
 
 
+# ——— Городские детали и поиск ———
+
+def centroid(ring):
+    """Центр тяжести кольца (lon, lat); для вырожденных — среднее точек."""
+    xy = [to_xy(*p) for p in ring]
+    a = cx = cy = 0.0
+    for (x1, y1), (x2, y2) in zip(xy, xy[1:] + xy[:1]):
+        f = x1 * y2 - x2 * y1
+        a += f
+        cx += (x1 + x2) * f
+        cy += (y1 + y2) * f
+    if abs(a) < 1e-6:
+        return sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring)
+    return to_lonlat(cx / (3 * a), cy / (3 * a))
+
+
+def poi_category(t):
+    """Категория места для поиска — те же id, что в src/categories.js."""
+    a, shop, tour, hist = t.get('amenity'), t.get('shop'), t.get('tourism'), t.get('historic')
+    if shop in ('mall', 'department_store') or a == 'marketplace':
+        return 'mall'
+    if a in ('restaurant', 'fast_food', 'cafe', 'bar', 'pub', 'ice_cream', 'food_court'):
+        return 'food'
+    if a == 'pharmacy':
+        return 'pharmacy'
+    if tour in ('hotel', 'hostel', 'guest_house', 'motel', 'apartment'):
+        return 'hotel'
+    if a in ('hospital', 'clinic', 'doctors', 'dentist', 'veterinary') or 'healthcare' in t:
+        return 'health'
+    if a in ('bank', 'atm', 'bureau_de_change'):
+        return 'bank'
+    if a == 'fuel':
+        return 'fuel'
+    if a in ('school', 'kindergarten', 'college', 'university', 'library'):
+        return 'edu'
+    if (tour in ('museum', 'attraction', 'gallery', 'zoo', 'theme_park') or a in ('theatre', 'cinema', 'arts_centre')
+            or hist in ('monument', 'memorial', 'castle') or t.get('leisure') == 'stadium'):
+        return 'culture'
+    if a in ('townhall', 'police', 'post_office', 'courthouse', 'fire_station', 'embassy') or t.get('office') == 'government':
+        return 'gov'
+    if a == 'place_of_worship':
+        return 'worship'
+    if a == 'bus_station' or t.get('railway') in ('station', 'halt') or t.get('public_transport') == 'station':
+        return 'transport'
+    if t.get('aeroway') == 'aerodrome':
+        return 'airport'
+    if shop:
+        return 'shop'
+    return 'other'
+
+
+POI_TYPE_KEYS = ('amenity', 'shop', 'tourism', 'healthcare', 'leisure', 'office', 'craft', 'historic', 'railway',
+                 'aeroway')
+
+
+def is_poi(t):
+    return (any(k in t for k in POI_KEYS) or t.get('railway') in ('station', 'halt')
+            or t.get('aeroway') == 'aerodrome')
+
+
+def poi_details(t):
+    """Тип места (значение OSM: cafe, pharmacy…) и сведения для карточки: часы, телефон, сайт, адрес."""
+    kind = next((t[k] if t[k] != 'yes' else k for k in POI_TYPE_KEYS if k in t), '')
+    info = {}
+    for key, tags in (('hours', ('opening_hours',)), ('phone', ('phone', 'contact:phone')),
+                      ('site', ('website', 'contact:website', 'url')), ('insta', ('contact:instagram',))):
+        v = next((t[k] for k in tags if t.get(k)), None)
+        if v:
+            info[key] = v[:120]
+    street = t.get('addr:street') or t.get('addr:place')
+    if street and t.get('addr:housenumber'):
+        info['addr'] = f"{street}, {t['addr:housenumber']}"
+    return kind, info
+
+
+def ring_area(ring):
+    """Площадь кольца в условных единицах (градусы², с поправкой на широту) — чтобы выбрать главное из зданий."""
+    k = math.cos(math.radians(ring[0][1]))
+    return abs(sum(ax * k * by - bx * k * ay for (ax, ay), (bx, by) in zip(ring, ring[1:] + ring[:1]))) / 2
+
+
+class Search:
+    """Индекс для поиска без сервера: населённые пункты, улицы, адреса и места."""
+
+    def __init__(self):
+        self.places = []    # (класс, lon, lat, имена)
+        self.pois = []      # (lon, lat, имена, категория, тип, сведения)
+        self.streets = defaultdict(list)  # (имя, клетка 3 км) -> [(lon, lat, имена)]
+        self.addresses = []  # (lon, lat, улица, дом)
+
+    @staticmethod
+    def names(t):
+        return tuple(t.get(k) or '' for k in NAME_KEYS)
+
+    def add_street(self, coords, t):
+        lon, lat = coords[len(coords) // 2]
+        x, y = to_xy(lon, lat)
+        key = ((t.get('name:ru') or t['name']).lower(), int(x // 3000), int(y // 3000))
+        self.streets[key].append((lon, lat, self.names(t)))
+
+    def write(self, path, country):
+        settlements = [p for p in self.places if p[0] in ('city', 'town', 'village') and country.contains(p[1], p[2])]
+        grid = defaultdict(list)
+        for i, (cls, lon, lat, _names) in enumerate(settlements):
+            x, y = to_xy(lon, lat)
+            grid[(int(x // 10000), int(y // 10000))].append((i, x, y, {'city': 1.0, 'town': 1.6, 'village': 3.0}[cls]))
+
+        def nearest(lon, lat):
+            x, y = to_xy(lon, lat)
+            best, best_d = -1, 1e18
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    for i, px, py, w in grid.get((int(x // 10000) + di, int(y // 10000) + dj), ()):
+                        d = math.hypot(px - x, py - y) * w  # город «притягивает» сильнее села
+                        if d < best_d:
+                            best, best_d = i, d
+            return best
+
+        items = []
+
+        def add(names, kind, cat, lon, lat, typ='', info=None):
+            if not country.contains(lon, lat):
+                return
+            name, ru, tg, en = names
+            title = ru or name
+            if not title:
+                return
+            # Местное имя в OSM обычно таджикское («Хуҷанд»): если name:tg нет, ищем и по нему.
+            tg = tg or (name if name != title else '')
+            item = [title, tg if tg != title else '', en if en != title else '', kind, cat, typ,
+                    round(lon, 5), round(lat, 5), nearest(lon, lat)]
+            if info:
+                item.append(info)
+            items.append(item)
+
+        for cls, lon, lat, names in self.places:
+            add(names, 'place', cls, lon, lat)
+        for (_key, _i, _j), ways in self.streets.items():
+            mx = sum(w[0] for w in ways) / len(ways)
+            my = sum(w[1] for w in ways) / len(ways)
+            lon, lat, names = min(ways, key=lambda w: (w[0] - mx) ** 2 + (w[1] - my) ** 2)
+            add(names, 'street', '', lon, lat)
+        for lon, lat, names, cat, typ, info in self.pois:
+            add(names, 'poi', cat, lon, lat, typ, info)
+        seen = set()
+        for lon, lat, street, number in self.addresses:
+            key = (street, number, round(lon, 3), round(lat, 3))  # дом и точка на нём — один адрес
+            if key not in seen:
+                seen.add(key)
+                add((f'{street}, {number}', '', '', ''), 'address', '', lon, lat)
+        cities = [(names[1] or names[0]) for _cls, _lon, _lat, names in settlements]
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'version': 2, 'fields': ['name', 'name_tg', 'name_en', 'kind', 'category', 'type', 'lon', 'lat',
+                                                'place', 'info'],
+                       'places': cities, 'items': items}, f, ensure_ascii=False, separators=(',', ':'))
+        return len(items)
+
+
+class Details:
+    """Мелочи вблизи: переходы, светофоры, ворота, заборы, парковки, названия зданий."""
+
+    def __init__(self):
+        self.points = []            # (lon, lat, вид, имя)
+        self.crossing_nodes = {}    # id точки -> (lon, lat, вид)
+        self.node_crossings = {}    # id точки -> ([(lon, lat), (lon, lat)], вид) — поперёк дороги
+        self.crossings = []         # ([(lon, lat)], вид)
+        self.crossing_way_nodes = set()
+        self.barriers = []          # ([(lon, lat)], вид)
+        self.parkings = []          # ([(lon, lat)], имя)
+        self.labels = []            # (lon, lat, имена, площадь) — здания с названием
+        self.search = Search()
+
+    def node(self, o):
+        t = o.tags
+        lon, lat = o.location.lon, o.location.lat
+        kind = (POINT_KINDS.get(t.get('highway')) or POINT_KINDS.get(t.get('barrier'))
+                or POINT_KINDS.get(t.get('amenity')))
+        if kind:
+            self.points.append((lon, lat, kind, t.get('name', '')))
+        if (t.get('highway') == 'crossing' or ('crossing' in t and t.get('highway') == 'traffic_signals')) \
+                and t.get('crossing') not in NO_CROSSING:
+            signals = t.get('crossing') == 'traffic_signals' or t.get('highway') == 'traffic_signals'
+            self.crossing_nodes[o.id] = (lon, lat, 'signals' if signals else 'zebra')
+        if 'name' in t:
+            if t.get('place') in ('city', 'town', 'village', 'hamlet', 'suburb', 'quarter', 'neighbourhood'):
+                self.search.places.append((t['place'], lon, lat, Search.names(t)))
+            elif is_poi(t):
+                self.search.pois.append((lon, lat, Search.names(t), poi_category(t), *poi_details(t)))
+        if 'addr:housenumber' in t and ('addr:street' in t or 'addr:place' in t):
+            self.search.addresses.append((lon, lat, t.get('addr:street') or t['addr:place'], t['addr:housenumber']))
+
+    def way(self, o, coords, refs):
+        t = o.tags
+        hw = t.get('highway')
+        if hw in ('footway', 'path', 'cycleway') and 'crossing' in (t.get('footway'), t.get('cycleway'), t.get('path')) \
+                and t.get('crossing') not in NO_CROSSING:
+            self.crossings.append((coords, 'signals' if t.get('crossing') == 'traffic_signals' else 'zebra'))
+            self.crossing_way_nodes.update(refs)
+        elif hw in ROAD_CLASSES and t.get('area') != 'yes':
+            for i, ref in enumerate(refs):
+                if ref in self.crossing_nodes and ref not in self.node_crossings:
+                    self.node_crossings[ref] = (self.across(coords, i, STREET_CLASSES.get(hw, 3.5) + 0.5),
+                                                self.crossing_nodes[ref][2])
+        if hw and 'name' in t and (hw in ROAD_CLASSES or hw in ('living_street', 'pedestrian')) and len(coords) > 1:
+            self.search.add_street(coords, t)
+        if t.get('barrier') in BARRIERS and len(coords) > 1:
+            self.barriers.append((coords, t['barrier']))
+
+    @staticmethod
+    def across(coords, i, half):
+        """Отрезок поперёк дороги через точку i: «зебра» по ширине проезжей части."""
+        xy = [to_xy(*p) for p in coords]
+        (ax, ay), (bx, by) = xy[max(i - 1, 0)], xy[min(i + 1, len(xy) - 1)]
+        length = math.hypot(bx - ax, by - ay) or 1.0
+        nx, ny = -(by - ay) / length, (bx - ax) / length
+        x, y = xy[i]
+        return [to_lonlat(x + nx * half, y + ny * half), to_lonlat(x - nx * half, y - ny * half)]
+
+    def area(self, o, ring):
+        t = o.tags
+        lon, lat = centroid(ring)
+        if t.get('amenity') == 'parking':
+            if t.get('parking') not in ('underground',):
+                self.parkings.append((ring, t.get('name', '')))
+            self.points.append((lon, lat, 'parking', t.get('name', '')))
+        if 'name' in t:
+            if is_poi(t):
+                self.search.pois.append((lon, lat, Search.names(t), poi_category(t), *poi_details(t)))
+            elif 'building' in t:
+                self.labels.append((lon, lat, Search.names(t), ring_area(ring)))
+        if 'building' in t and 'addr:housenumber' in t and ('addr:street' in t or 'addr:place' in t):
+            self.search.addresses.append((lon, lat, t.get('addr:street') or t['addr:place'], t['addr:housenumber']))
+
+    def building_labels(self):
+        """Одно название на комплекс: части здания с тем же именем ближе 250 м не подписываются."""
+        kept = defaultdict(list)
+        out = []
+        for lon, lat, names, _area in sorted(self.labels, key=lambda lb: -lb[3]):
+            x, y = to_xy(lon, lat)
+            key = (names[1] or names[0]).lower()
+            if all(math.hypot(x - kx, y - ky) > 250 for kx, ky in kept[key]):
+                kept[key].append((x, y))
+                out.append((lon, lat, names))
+        return out
+
+    def crossing_lines(self):
+        nodes = [(line, kind) for ref, (line, kind) in self.node_crossings.items() if ref not in self.crossing_way_nodes]
+        return self.crossings + nodes
+
+
 # ——— Второй проход: дома и дороги там, где сажаются деревья ———
 
 class Obstacles:
@@ -486,25 +756,30 @@ class Obstacles:
         return True
 
 
-def read_obstacles(path, active, entrances):
+def read_obstacles(path, active, entrances, details):
+    """Второй проход: дома и дороги (для посадки деревьев и подъездов) и городские детали."""
     ob = Obstacles()
 
     def in_active(x, y):
         return (tile_x(x), tile_y(y)) in active
 
+    keys = ('building', 'highway', 'barrier', 'place', 'addr:housenumber', 'railway', 'aeroway', *POI_KEYS)
     fp = (osmium.FileProcessor(path)
           .with_locations()
-          .with_areas(osmium.filter.KeyFilter('building'))
-          .with_filter(osmium.filter.KeyFilter('building', 'highway')))
+          .with_areas(osmium.filter.KeyFilter('building', 'aeroway', *POI_KEYS))
+          .with_filter(osmium.filter.KeyFilter(*keys)))
     for o in fp:
         t = o.tags
-        if o.is_way():
+        if o.is_node():
+            details.node(o)
+        elif o.is_way():
             try:
                 coords = [(n.lon, n.lat) for n in o.nodes]
             except osmium.InvalidLocationError:
                 continue
+            refs = [n.ref for n in o.nodes]
+            details.way(o, coords, refs)
             if 'building' in t and len(coords) > 3 and o.is_closed():
-                refs = [n.ref for n in o.nodes]
                 if any(r in entrances for r in refs):
                     entrance_angles(coords, refs, entrances, ob.entrance_out)
             hw = t.get('highway')
@@ -517,17 +792,21 @@ def read_obstacles(path, active, entrances):
                     if in_active(*a) or in_active(*b):
                         ob.add_segment(a, b, half)
                 if DECOR and hw in ROAD_CLASSES and in_active(*xy[0]):
-                    refs = [n.ref for n in o.nodes]
                     for r in refs:
                         ob.node_use[r] += 1
                     plain = hw in STREET_CLASSES and t.get('bridge') is None and t.get('tunnel') is None
                     ob.streets.append((hw if plain else '_' + hw, xy, refs))
-        elif o.is_area() and 'building' in t:
-            for outer in o.outer_rings():
+        elif o.is_area():
+            for i, outer in enumerate(o.outer_rings()):
                 try:
-                    ring = [to_xy(n.lon, n.lat) for n in outer]
+                    lonlat = [(n.lon, n.lat) for n in outer]
                 except osmium.InvalidLocationError:
                     continue
+                if i == 0:
+                    details.area(o, lonlat)
+                if 'building' not in t:
+                    continue
+                ring = [to_xy(*p) for p in lonlat]
                 box = bbox([ring])
                 if in_active(box[0], box[1]) or in_active(box[2], box[3]):
                     ob.buildings.append((box, ring))
@@ -646,14 +925,62 @@ UNIT = {n: [(math.cos(a * 2 * math.pi / n), math.sin(a * 2 * math.pi / n)) for a
 NODES_PER_TREE = TRUNK_SIDES + (len(TIERS) - 1) * SIDES
 
 
-def write(dst, trees, entrances, rnd):
+def outline(coords, width):
+    """Полоса заданной ширины вдоль ломаной (lon, lat) — объёмный забор или стена."""
+    xy = [to_xy(*p) for p in coords]
+    xy = [p for i, p in enumerate(xy) if i == 0 or p != xy[i - 1]]
+    if len(xy) < 2:
+        return None
+    normals = []
+    for (ax, ay), (bx, by) in zip(xy, xy[1:]):
+        length = math.hypot(bx - ax, by - ay) or 1.0
+        normals.append((-(by - ay) / length, (bx - ax) / length))
+    left, right = [], []
+    for i, (x, y) in enumerate(xy):
+        n1 = normals[max(i - 1, 0)]
+        n2 = normals[min(i, len(normals) - 1)]
+        nx, ny = n1[0] + n2[0], n1[1] + n2[1]
+        length = math.hypot(nx, ny) or 1.0
+        nx, ny = nx / length, ny / length
+        k = width / 2 / max(0.35, nx * n2[0] + ny * n2[1])  # стык под углом шире, но не бесконечно
+        left.append(to_lonlat(x + nx * k, y + ny * k))
+        right.append(to_lonlat(x - nx * k, y - ny * k))
+    return left + right[::-1] + [left[0]]
+
+
+def write(dst, trees, entrances, details, rnd):
     """Сначала все точки, потом линии: номера точек каждого дерева идут подряд."""
     w = osmium.SimpleWriter(dst, overwrite=True)
-    for nid, (lon, lat, angle, tags) in enumerate(entrances, 1):
-        t = {'yoobi': 'entrance', **({'angle': str(angle)} if angle is not None else {}),
-             **{('flats' if k == 'addr:flats' else k): v for k, v in tags.items()}}
-        w.add_node(Node(id=nid, location=(lon, lat), tags=t, version=1))
-    first = nid = len(entrances) + 1
+    nid = 0
+
+    def node(lon, lat, tags=None):
+        nonlocal nid
+        nid += 1
+        w.add_node(Node(id=nid, location=(lon, lat), tags=tags or {}, version=1))
+        return nid
+
+    for lon, lat, angle, tags in entrances:
+        node(lon, lat, {'yoobi': 'entrance', **({'angle': str(angle)} if angle is not None else {}),
+                        **{('flats' if k == 'addr:flats' else k): v for k, v in tags.items()}})
+    for lon, lat, kind, name in details.points:
+        node(lon, lat, {'yoobi': 'point', 'kind': kind, **({'name': name} if name else {})})
+    for lon, lat, names in details.building_labels():
+        node(lon, lat, {'yoobi': 'label', **{k: v for k, v in zip(NAME_KEYS, names) if v}})
+    shapes = []  # (id точек, теги) — линии и многоугольники деталей
+    for coords, kind in details.crossing_lines():
+        shapes.append(([node(*p) for p in coords], {'yoobi': 'crossing', 'kind': kind}))
+    for coords, kind in details.barriers:
+        shapes.append(([node(*p) for p in coords], {'yoobi': 'barrier_line', 'kind': kind}))
+        height, width = BARRIERS[kind]
+        ring = outline(coords, width)
+        if ring:
+            ids = [node(*p) for p in ring[:-1]]
+            shapes.append((ids + [ids[0]], {'yoobi': 'barrier', 'kind': kind, 'height': f'{height:.1f}'}))
+    for ring, name in details.parkings:
+        if len(ring) > 3 and ring[0] == ring[-1]:
+            ids = [node(*p) for p in ring[:-1]]
+            shapes.append((ids + [ids[0]], {'yoobi': 'parking', **({'name': name} if name else {})}))
+    first = nid = nid + 1
     shades = bytearray(len(trees))
     for i, (x, y, crown, _height, _decor) in enumerate(trees):
         shades[i] = rnd.randrange(3)
@@ -666,6 +993,9 @@ def write(dst, trees, entrances, rnd):
                                                   (y + r * (ux * s + uy * c)) / KY), version=1))
                 nid += 1
     wid = 1
+    for ids, tags in shapes:
+        w.add_way(Way(id=wid, nodes=ids, tags=tags, version=1))
+        wid += 1
     for i, (_x, _y, _crown, height, decor) in enumerate(trees):
         nid = first + i * NODES_PER_TREE
         for k, (_scale, lo, hi) in enumerate(TIERS):
@@ -722,7 +1052,7 @@ def header_latitude(path):
     return (box.bottom_left.lat + box.top_right.lat) / 2 if box.valid() else 38.5
 
 
-def main(src, dst, mask_path, clipped_path=None):
+def main(src, dst, mask_path, clipped_path=None, search_path=None):
     set_projection(header_latitude(src))
     rnd = random.Random(7)
     nature = read_nature(src)
@@ -746,11 +1076,12 @@ def main(src, dst, mask_path, clipped_path=None):
                 for tx in range(tile_x(x - r), tile_x(x + r) + 1):
                     for ty in range(tile_y(y + r), tile_y(y - r) + 1):
                         active.add((tx, ty))
-    ob = read_obstacles(src, active, nature.entrances)
+    details = Details()
+    ob = read_obstacles(src, active, nature.entrances, details)
     trees = plant(nature, plans, ob, places, rnd)
     # Подъезды не на контуре здания — без направления.
     entrances = ob.entrance_out + [(lon, lat, None, tags) for lon, lat, tags in nature.entrances.values()]
-    write(dst, trees, entrances, rnd)
+    write(dst, trees, entrances, details, rnd)
     write_mask(mask_path, nature.country)
     per_tile = defaultdict(int)
     for x, y, *_ in trees:
@@ -759,6 +1090,14 @@ def main(src, dst, mask_path, clipped_path=None):
           f'засажено лесов и садов: {len(plans)}, тайлов с деревьями: {len(per_tile)}, '
           f'больше всего в тайле: {max(per_tile.values(), default=0)}, подъездов: {len(entrances)}, '
           f'граница страны: {"да" if nature.country else "нет"}')
+    kinds = defaultdict(int)
+    for *_, kind, _name in details.points:
+        kinds[kind] += 1
+    print(f'переходов: {len(details.crossing_lines())}, заборов и стен: {len(details.barriers)}, '
+          f'парковок: {len(details.parkings)}, названий зданий: {len(details.building_labels())}, '
+          f'точек: {dict(sorted(kinds.items()))}')
+    if search_path:
+        print(f'поиск: {search_path} ({details.search.write(search_path, country)} записей)')
     if clipped_path:
         if not nature.country:
             print(f'Границы {COUNTRY} в выгрузке нет — подписи соседей не убираются', file=sys.stderr)
@@ -768,4 +1107,5 @@ def main(src, dst, mask_path, clipped_path=None):
 
 if __name__ == '__main__':
     sys.setrecursionlimit(100000)
-    main(*[a for a in sys.argv[1:] if not a.startswith('--')][:4])
+    search = next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--search=')), None)
+    main(*[a for a in sys.argv[1:] if not a.startswith('--')][:4], search_path=search)

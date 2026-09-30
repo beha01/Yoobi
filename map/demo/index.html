@@ -10,9 +10,14 @@
   <style>
     html, body, #map { margin: 0; height: 100%; }
     body { background: #F3F0EA; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
-    .maplibregl-popup-content { border-radius: 12px; padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.15); }
-    .poi-name { font-weight: 600; font-size: 14px; }
-    .poi-type { color: #777; font-size: 13px; margin-top: 2px; }
+    body.dark { background: #1B1F26; }
+    .theme-btn svg { display: block; margin: auto; }
+    /* Элементы управления MapLibre в ночной теме. */
+    .dark .maplibregl-ctrl-group, .dark .maplibregl-ctrl-attrib { background: #232830; color: #C8CDD5; }
+    .dark .maplibregl-ctrl-group button + button { border-top-color: #343B46; }
+    .dark .maplibregl-ctrl button .maplibregl-ctrl-icon, .dark .theme-btn svg { filter: invert(.85); }
+    .dark .maplibregl-ctrl-attrib a { color: #C8CDD5; }
+    .dark .maplibregl-ctrl-scale { background: rgba(35, 40, 48, .8); color: #C8CDD5; border-color: #9AA3AE; }
   </style>
 </head>
 <body>
@@ -20,14 +25,20 @@
   <script type="module">
     // Параметры адреса: ?lang=ru|tg|en  ?category=food  ?tiles=pmtiles://https://…/tajikistan.pmtiles
     //                   ?extra=pmtiles://https://…/tajikistan-extra.pmtiles  ?mask=https://…/tajikistan-mask.geojson
+    //                   ?search=https://…/tajikistan-search.json  ?theme=dark
     //                   ?3d=0  ?poi=0  ?trees=0  ?relief=0  ?terrain=1.3
     import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs';
-    import { createStyle, mapOptions, POI_LAYERS, describeFeature, SUBCLASS_RU, enableLockedCountries } from '../src/index.js';
+    import {
+      createStyle, mapOptions, enableLockedCountries, setTheme, loadSearch, enableSearchPanel,
+      POI_LAYERS, describeFeature, SUBCLASS_RU,
+    } from '../src/index.js';
 
     const q = new URLSearchParams(location.search);
     const lang = q.get('lang') || 'ru';
     const tiles = q.get('tiles') || undefined;
     const extraTiles = q.get('extra') || undefined;
+    let theme = q.get('theme') === 'dark' ? 'dark' : 'light';
+    document.body.classList.toggle('dark', theme === 'dark');
 
     if ([tiles, extraTiles].some((t) => t?.startsWith('pmtiles://'))) {
       await new Promise((resolve, reject) => {
@@ -40,43 +51,87 @@
       maplibregl.addProtocol('pmtiles', new window.pmtiles.Protocol({ metadata: true }).tile);
     }
 
+    const styleOptions = {
+      lang,
+      tiles,
+      extraTiles,
+      category: q.get('category'),
+      trees: q.get('trees') !== '0',
+      buildings3d: q.get('3d') !== '0',
+      poi: q.get('poi') !== '0',
+      hillshade: q.get('relief') !== '0',
+      terrain: q.get('terrain') ? Number(q.get('terrain')) : false,
+      locked: q.get('mask') || true,
+    };
     const map = new maplibregl.Map({
       container: 'map',
-      style: createStyle({
-        lang,
-        tiles,
-        extraTiles,
-        category: q.get('category'),
-        trees: q.get('trees') !== '0',
-        buildings3d: q.get('3d') !== '0',
-        poi: q.get('poi') !== '0',
-        hillshade: q.get('relief') !== '0',
-        terrain: q.get('terrain') ? Number(q.get('terrain')) : false,
-        locked: q.get('mask') || true,
-      }),
+      style: createStyle({ ...styleOptions, theme }),
       ...mapOptions({ hash: true }),
     });
+    map.getContainer().dataset.yoobiTheme = theme;
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 
-    // Название и тип места по клику.
-    const popup = new maplibregl.Popup({ closeButton: false, offset: 14, maxWidth: '260px' });
-    map.on('click', POI_LAYERS, (e) => {
-      const place = describeFeature(e.features[0], lang);
-      const type = SUBCLASS_RU[place.subclass] || SUBCLASS_RU[place.class] || place.category.label;
-      const box = document.createElement('div');
-      box.innerHTML = '<div class="poi-name"></div><div class="poi-type"></div>';
-      box.firstChild.textContent = place.name;
-      box.lastChild.textContent = type;
-      popup.setLngLat(place.coordinates || e.lngLat).setDOMContent(box).addTo(map);
-    });
-    map.on('mouseenter', POI_LAYERS, () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', POI_LAYERS, () => { map.getCanvas().style.cursor = ''; });
+    // День / ночь: стиль меняется «разницей», тайлы и выделение остаются.
+    const MOON = '<svg width="20" height="20" viewBox="0 0 24 24"><path fill="#333" d="M12.3 22c5.2 0 9.4-3.9 9.9-9-1.3 1.6-3.3 2.6-5.5 2.6-3.9 0-7.1-3.2-7.1-7.1 0-2.2 1-4.2 2.6-5.5C7.1 3.5 2.3 7.8 2.3 13c0 5 4.5 9 10 9z"/></svg>';
+    const SUN = '<svg width="20" height="20" viewBox="0 0 24 24"><path fill="#333" d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2zm0 19h2v3h-2zM3.5 4.9l1.4-1.4 2.1 2.1-1.4 1.4zm12.9 12.9 1.4-1.4 2.1 2.1-1.4 1.4zM1 11h3v2H1zm19 0h3v2h-3zM4.9 20.5l-1.4-1.4 2.1-2.1 1.4 1.4zM17.8 7.6l-1.4-1.4 2.1-2.1 1.4 1.4z"/></svg>';
+    class ThemeControl {
+      onAdd() {
+        this.el = document.createElement('div');
+        this.el.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+        this.el.innerHTML = '<button type="button" class="theme-btn"></button>';
+        const button = this.el.firstChild;
+        const paint = () => {
+          button.innerHTML = theme === 'dark' ? SUN : MOON;
+          button.title = theme === 'dark' ? 'Дневная карта' : 'Ночная карта';
+          button.setAttribute('aria-label', button.title);
+        };
+        paint();
+        button.addEventListener('click', () => {
+          theme = theme === 'dark' ? 'light' : 'dark';
+          document.body.classList.toggle('dark', theme === 'dark');
+          setTheme(map, theme, styleOptions);
+          paint();
+        });
+        return this.el;
+      }
+      onRemove() { this.el.remove(); }
+    }
+    map.addControl(new ThemeControl(), 'top-right');
 
-    // Соседние страны: замок, пульс и сообщение «пока недоступна».
-    map.once('load', () => enableLockedCountries(map, { lang }));
+    // Поиск и карточки: индекс рядом с тайлами (…/data/tajikistan-search.json) или ?search=.
+    const searchUrl = q.get('search') || (tiles?.includes('/data/tajikistan.pmtiles')
+      ? tiles.replace(/^pmtiles:\/\//, '').replace('tajikistan.pmtiles', 'tajikistan-search.json')
+      : null);
+    map.once('load', async () => {
+      enableLockedCountries(map, { lang });
+      try {
+        if (!searchUrl) throw new Error('нет индекса (параметр ?search=)');
+        window.search = await loadSearch(searchUrl);
+        window.panel = enableSearchPanel(map, window.search, { lang });
+      } catch (err) {
+        console.warn('Поиск недоступен:', err.message);
+        popupOnClick();
+      }
+    });
+
+    // Без индекса поиска — простое всплывающее название и тип места.
+    function popupOnClick() {
+      const popup = new maplibregl.Popup({ closeButton: false, offset: 14, maxWidth: '260px' });
+      const layers = POI_LAYERS.filter((id) => map.getLayer(id));
+      map.on('click', layers, (e) => {
+        const place = describeFeature(e.features[0], lang);
+        const box = document.createElement('div');
+        box.innerHTML = '<b></b><div style="color:#777"></div>';
+        box.firstChild.textContent = place.name;
+        box.lastChild.textContent = SUBCLASS_RU[place.subclass] || SUBCLASS_RU[place.class] || place.category.label;
+        popup.setLngLat(place.coordinates || e.lngLat).setDOMContent(box).addTo(map);
+      });
+      map.on('mouseenter', layers, () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', layers, () => { map.getCanvas().style.cursor = ''; });
+    }
 
     window.map = map;
   </script>

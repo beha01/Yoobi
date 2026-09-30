@@ -1,4 +1,5 @@
-// Сборка: спрайты (PNG 1x/2x + JSON) и готовые style.json на всех языках.
+// Сборка: спрайты (PNG 1x/2x + JSON, дневной и ночной) и готовые style.json
+// на всех языках в обеих темах: styles/yoobi-ru.json, styles/yoobi-dark-ru.json и т. д.
 //
 //   npm run build                                   # для локальной демо-страницы
 //   npm run build -- --base-url=https://cdn.example.com/map/
@@ -16,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
 
-import { buildStyle, LANGUAGES, DEFAULTS } from '../src/style.js';
+import { buildStyle, LANGUAGES, DEFAULTS, THEMES } from '../src/style.js';
 import { spriteImages, layoutSprite, sheetSvg, spriteIndex } from './sprite.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -37,18 +38,21 @@ if (!baseUrl.endsWith('/')) baseUrl += '/';
 new URL(baseUrl); // проверка, что адрес абсолютный
 
 // ——— Спрайты ———
-const layout = layoutSprite(spriteImages());
-const svg = sheetSvg(layout);
 await mkdir(join(root, 'sprites'), { recursive: true });
-for (const pr of [1, 2]) {
-  const png = new Resvg(svg, { fitTo: { mode: 'zoom', value: pr }, font: { loadSystemFonts: false } })
-    .render()
-    .asPng();
-  const suffix = pr === 1 ? '' : `@${pr}x`;
-  await writeFile(join(root, 'sprites', `yoobi${suffix}.png`), png);
-  await writeFile(join(root, 'sprites', `yoobi${suffix}.json`), `${JSON.stringify(spriteIndex(layout, pr), null, 1)}\n`);
+for (const theme of THEMES) {
+  const layout = layoutSprite(spriteImages(theme));
+  const svg = sheetSvg(layout);
+  const name = theme === 'light' ? 'yoobi' : `yoobi-${theme}`;
+  for (const pr of [1, 2]) {
+    const png = new Resvg(svg, { fitTo: { mode: 'zoom', value: pr }, font: { loadSystemFonts: false } })
+      .render()
+      .asPng();
+    const suffix = pr === 1 ? '' : `@${pr}x`;
+    await writeFile(join(root, 'sprites', `${name}${suffix}.png`), png);
+    await writeFile(join(root, 'sprites', `${name}${suffix}.json`), `${JSON.stringify(spriteIndex(layout, pr), null, 1)}\n`);
+  }
+  console.log(`Спрайт ${name}: ${Object.keys(layout.placed).length} картинок, ${layout.width}×${layout.height}`);
 }
-console.log(`Спрайт: ${Object.keys(layout.placed).length} картинок, ${layout.width}×${layout.height}`);
 
 // ——— Стили ———
 const options = {
@@ -65,11 +69,14 @@ const options = {
   locked: args.locked === false ? false : args.mask || true,
 };
 await mkdir(join(root, 'styles'), { recursive: true });
-for (const lang of LANGUAGES) {
-  const style = buildStyle({ ...options, lang });
-  const json = `${JSON.stringify(style)}\n`;
-  await writeFile(join(root, 'styles', `yoobi-${lang}.json`), json);
-  if (lang === 'ru') await writeFile(join(root, 'styles', 'yoobi.json'), json);
-  console.log(`styles/yoobi-${lang}.json: ${style.layers.length} слоёв, ${(json.length / 1024).toFixed(1)} КБ`);
+for (const theme of THEMES) {
+  const name = theme === 'light' ? 'yoobi' : `yoobi-${theme}`;
+  for (const lang of LANGUAGES) {
+    const style = buildStyle({ ...options, lang, theme });
+    const json = `${JSON.stringify(style)}\n`;
+    await writeFile(join(root, 'styles', `${name}-${lang}.json`), json);
+    if (lang === 'ru') await writeFile(join(root, 'styles', `${name}.json`), json);
+    console.log(`styles/${name}-${lang}.json: ${style.layers.length} слоёв, ${(json.length / 1024).toFixed(1)} КБ`);
+  }
 }
 console.log(`Базовый адрес: ${baseUrl}`);

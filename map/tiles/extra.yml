@@ -4,9 +4,14 @@
 #
 #   tree      — ярусы кроны объёмных деревьев (tier, shade, min_height, height, decor)
 #   entrance  — подъезды: номер (ref), квартиры (flats), угол стены (angle)
+#   crossing  — пешеходные переходы («зебры»): kind = zebra | signals
+#   barrier   — заборы и стены: объёмная полоса (kind, height) и линия (kind)
+#   parking   — площадки парковок (name)
+#   point     — светофоры, ворота, шлагбаумы, лавочки, фонтаны, туалеты, вода, парковки (kind, name)
+#   label     — названия зданий без мест внутри (name, name:ru, name:tg, name:en)
 
 schema_name: Yoobi extra
-schema_description: Объёмные деревья и подъезды для стиля Yoobi Map
+schema_description: Объёмные деревья, подъезды и городские детали для стиля Yoobi Map
 attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
 
 sources:
@@ -45,3 +50,61 @@ layers:
           - key: flats
           - key: angle
             type: integer
+  - id: crossing
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 15
+        include_when:
+          yoobi: crossing
+        attributes:
+          - key: kind
+  - id: barrier
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 15
+        include_when:
+          yoobi: barrier
+        attributes:
+          - key: kind
+          - key: height
+            type: double
+      - source: osm
+        geometry: line
+        min_zoom: 15
+        include_when:
+          yoobi: barrier_line
+        attributes:
+          - key: kind
+  - id: parking
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 15
+        include_when:
+          yoobi: parking
+        attributes:
+          - key: name
+  - id: point
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: point
+        attributes:
+          - key: kind
+          - key: name
+  - id: label
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: label
+        attributes:
+          - key: name
+          - key: name:ru
+          - key: name:tg
+          - key: name:en

@@ -4,22 +4,26 @@
 //   import { createStyle, mapOptions } from './map/src/index.js';
 //   const map = new maplibregl.Map({ container: 'map', style: createStyle(), ...mapOptions() });
 //
-// Модуль не зависит от MapLibre и не трогает DOM: его можно подключить в любой
-// проект (чистый JS, React, Vue, Svelte, Angular) или собрать из него style.json
-// для мобильных приложений (scripts/build.mjs).
+// Стиль и поиск не зависят от MapLibre и не трогают DOM: их можно подключить в любой
+// проект (чистый JS, React, Vue, Svelte, Angular) или собрать из стиля style.json
+// для мобильных приложений (scripts/build.mjs). DOM нужен только готовым элементам
+// интерфейса: enableSearchPanel (ui.js) и enableLockedCountries (locked.js).
 
-import { buildStyle, poiFilter, textFieldFor, LANGUAGES } from './style.js';
+import { buildStyle, poiFilter, textFieldFor, LANGUAGES, THEMES } from './style.js';
 import { CATEGORY_BY_ID, OTHER, categoryFor } from './categories.js';
 import { TAJIKISTAN_BOUNDS, DUSHANBE_VIEW } from './tajikistan.js';
 
 export {
-  buildStyle, DEFAULTS, COLORS, LANGUAGES, nameExpression, streetNameExpression, riverNameExpression, poiFilter,
+  buildStyle, DEFAULTS, COLORS, NIGHT_COLORS, THEMES, LANGUAGES, nameExpression, streetNameExpression,
+  riverNameExpression, poiFilter,
 } from './style.js';
 export {
   CATEGORIES, CATEGORY_BY_ID, OTHER, AIRPORT, SUBCLASS_RU, LANDMARK_CATEGORIES, categoryFor, iconFor,
 } from './categories.js';
 export { TAJIKISTAN_BOUNDS, DUSHANBE_VIEW, COUNTRY_VIEW, CITIES, REGIONS } from './tajikistan.js';
 export { enableLockedCountries } from './locked.js';
+export { createSearch, loadSearch, normalize } from './search.js';
+export { enableSearchPanel, prettyHours } from './ui.js';
 export { OUTSIDE_MASK, NEIGHBORS } from './borders.js';
 
 // Адрес спрайта рядом с пакетом: <папка пакета>/sprites/yoobi.
@@ -29,8 +33,8 @@ export function defaultSpriteUrl() {
 
 /**
  * Готовый объект стиля для `new maplibregl.Map({ style })`.
- * Опции — см. DEFAULTS в style.js: lang, tiles, extraTiles, glyphs, sprite, dem,
- * hillshade, terrain, buildings3d, trees, locked, clipped, poi, category.
+ * Опции — см. DEFAULTS в style.js: lang, theme ('light' | 'dark'), tiles, extraTiles, glyphs,
+ * sprite, dem, hillshade, terrain, buildings3d, trees, locked, clipped, poi, category.
  */
 export function createStyle(options = {}) {
   return buildStyle({ sprite: defaultSpriteUrl(), ...options });
@@ -81,8 +85,30 @@ export function setPoiCategory(map, category = null) {
 }
 
 /**
+ * Сменить тему: 'light' (день) или 'dark' (ночь). Стиль пересобирается с теми же
+ * опциями, что были у createStyle; MapLibre применяет только разницу, тайлы не перекачиваются.
+ * Слои и источники, добавленные приложением поверх стиля (маршруты, выделение), сохраняются.
+ * Контейнер карты получает data-yoobi-theme — по нему панели и сообщения берут свои цвета.
+ */
+export function setTheme(map, theme, options = {}) {
+  if (!THEMES.includes(theme)) throw new Error(`Неизвестная тема: ${theme}`);
+  map.getContainer().dataset.yoobiTheme = theme;
+  map.setStyle(createStyle({ ...options, theme }), {
+    diff: true,
+    transformStyle: (previous, next) => {
+      if (!previous) return next;
+      const ids = new Set(next.layers.map((l) => l.id));
+      const sources = { ...next.sources };
+      for (const [id, source] of Object.entries(previous.sources)) if (!(id in sources)) sources[id] = source;
+      return { ...next, sources, layers: [...next.layers, ...previous.layers.filter((l) => !ids.has(l.id))] };
+    },
+  });
+}
+
+/**
  * Включить/выключить группу слоёв: '3d' (здания), 'poi' (места), 'hillshade' (рельеф),
- * 'trees' (деревья), 'entrances' (подъезды), 'locked' (заморозка соседних стран).
+ * 'trees' (деревья), 'entrances' (подъезды), 'details' (переходы, заборы, парковки,
+ * светофоры, лавочки), 'locked' (заморозка соседних стран).
  */
 export function setGroupVisible(map, group, visible) {
   for (const layer of layersWithMeta(map, 'yoobi:group')) {

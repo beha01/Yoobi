@@ -1,14 +1,35 @@
 // Рисует картинки спрайта в SVG и раскладывает их на общий лист.
-// Размеры — в CSS-пикселях; спрайт собирается в 1x и 2x.
+// Размеры — в CSS-пикселях; спрайт собирается в 1x и 2x, в дневной и ночной теме.
 
 import { ICONS, CATEGORIES, categoryIcons } from '../src/categories.js';
 import { PILL, MARK } from '../src/style.js';
 
 const LANDMARK = new Set(CATEGORIES.filter((c) => c.landmark).map((c) => c.id));
 
-const DEFS = `
+// Цвета подложек, колец и узоров: в ночной теме плашки тёмные, а значки остаются цветными.
+const THEME = {
+  light: {
+    shadow: '#1b2a3a', shadowOpacity: 0.26, plate: '#fff', plateStroke: '#B7AC9D', door: '#7A6652',
+    arrowRing: '#6B5B4B', arrowFill: '#3F7FD8', lockStroke: '#D9D3CA', lockGlyph: '#6F6A62',
+    dotFill: '#fff', dotRings: ['#2B2B2B', '#3A3A3A', '#4A4A4A'], peak: '#8B6B4A', peakStroke: '#fff',
+    wood: '#86C463', crown: ['#9BD36E', '#6DB34A', '#4C9236'], crown2: ['#8CCB60', '#5EA640', '#3F8430'],
+    crownShadow: '#2f5a22', park: '#4B9A3A', oneway: '#8E98A5', signals: '#2F3338',
+    liftPost: '#4E5560', liftStripe: '#E0433F',
+  },
+  dark: {
+    shadow: '#000000', shadowOpacity: 0.45, plate: '#2A303A', plateStroke: '#4A5260', door: '#C9B8A4',
+    arrowRing: '#AEB5BF', arrowFill: '#6FA3F0', lockStroke: '#4A5260', lockGlyph: '#C8CDD5',
+    dotFill: '#1C2129', dotRings: ['#E6E9ED', '#D0D5DC', '#B8BFC8'], peak: '#C7A57D', peakStroke: '#1C2129',
+    wood: '#1E3D2A', crown: ['#3F7F45', '#2D6634', '#1F4A26'], crown2: ['#397A40', '#285D30', '#1B4322'],
+    crownShadow: '#000000', park: '#2F6B38', oneway: '#8A94A3', signals: '#15181D',
+    liftPost: '#AEB5BF', liftStripe: '#E0433F',
+  },
+};
+let T = THEME.light;
+
+const defs = () => `
 <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
-  <feDropShadow dx="0" dy="1" stdDeviation="1.3" flood-color="#1b2a3a" flood-opacity="0.26"/>
+  <feDropShadow dx="0" dy="1" stdDeviation="1.3" flood-color="${T.shadow}" flood-opacity="${T.shadowOpacity}"/>
 </filter>
 <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
   <feGaussianBlur stdDeviation="0.9"/>
@@ -17,14 +38,14 @@ const DEFS = `
   <feGaussianBlur stdDeviation="1.8"/>
 </filter>
 <radialGradient id="crown" cx="38%" cy="34%" r="70%">
-  <stop offset="0" stop-color="#9BD36E"/>
-  <stop offset="0.55" stop-color="#6DB34A"/>
-  <stop offset="1" stop-color="#4C9236"/>
+  <stop offset="0" stop-color="${T.crown[0]}"/>
+  <stop offset="0.55" stop-color="${T.crown[1]}"/>
+  <stop offset="1" stop-color="${T.crown[2]}"/>
 </radialGradient>
 <radialGradient id="crown2" cx="38%" cy="34%" r="70%">
-  <stop offset="0" stop-color="#8CCB60"/>
-  <stop offset="0.55" stop-color="#5EA640"/>
-  <stop offset="1" stop-color="#3F8430"/>
+  <stop offset="0" stop-color="${T.crown2[0]}"/>
+  <stop offset="0.55" stop-color="${T.crown2[1]}"/>
+  <stop offset="1" stop-color="${T.crown2[2]}"/>
 </radialGradient>`;
 
 function glyph(iconName, cx, cy, size) {
@@ -33,7 +54,7 @@ function glyph(iconName, cx, cy, size) {
 }
 
 function badge(color, icon, cx, cy, r) {
-  return `<g filter="url(#shadow)"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff"/></g>
+  return `<g filter="url(#shadow)"><circle cx="${cx}" cy="${cy}" r="${r}" fill="${T.plate}"/></g>
     <circle cx="${cx}" cy="${cy}" r="${r - 2}" fill="${color}"/>
     ${glyph(icon, cx, cy, r * 1.07)}`;
 }
@@ -49,7 +70,7 @@ function pill(color, icon) {
   const top = (h - ch) / 2;
   return {
     width: w, height: h,
-    body: `<g filter="url(#shadow)"><rect x="18" y="4" width="${w - 22}" height="${h - 8}" rx="8" fill="#fff"/></g>
+    body: `<g filter="url(#shadow)"><rect x="18" y="4" width="${w - 22}" height="${h - 8}" rx="8" fill="${T.plate}"/></g>
       ${badge(color, icon, cx, h / 2, 15)}`,
     stretchX: [[cl + 3, w - 14]],
     stretchY: [[h / 2 - 1, h / 2 + 1]],
@@ -63,7 +84,7 @@ function mark(color, icon) {
   const { width: w, circleY: cy, contentTop: ct, contentHeight: ch } = MARK;
   return {
     width: w, height: MARK.height,
-    body: `<g filter="url(#shadow)"><rect x="4" y="36" width="${w - 8}" height="24" rx="8" fill="#fff" fill-opacity="0.94"/></g>
+    body: `<g filter="url(#shadow)"><rect x="4" y="36" width="${w - 8}" height="24" rx="8" fill="${T.plate}" fill-opacity="0.94"/></g>
       ${badge(color, icon, w / 2, cy, 15)}`,
     stretchX: [[6, 16], [w - 16, w - 6]],
     stretchY: [[46, 50]],
@@ -75,7 +96,7 @@ function mark(color, icon) {
 function parkLabel() {
   return {
     width: 40, height: 30,
-    body: '<rect x="2" y="2" width="36" height="26" rx="9" fill="#4B9A3A" fill-opacity="0.9"/>',
+    body: `<rect x="2" y="2" width="36" height="26" rx="9" fill="${T.park}" fill-opacity="0.9"/>`,
     stretchX: [[12, 28]],
     stretchY: [[13, 17]],
     content: [10, 7, 30, 23],
@@ -87,9 +108,9 @@ function entranceLabel() {
   const k = 12 / 24;
   return {
     width: 34, height: 22,
-    body: `<g filter="url(#shadow)"><rect x="1.5" y="1.5" width="31" height="19" rx="6" fill="#fff"/></g>
-      <rect x="1.5" y="1.5" width="31" height="19" rx="6" fill="none" stroke="#B7AC9D" stroke-width="0.8"/>
-      <path fill="#7A6652" transform="translate(4 5) scale(${k})" d="${ICONS.door}"/>`,
+    body: `<g filter="url(#shadow)"><rect x="1.5" y="1.5" width="31" height="19" rx="6" fill="${T.plate}"/></g>
+      <rect x="1.5" y="1.5" width="31" height="19" rx="6" fill="none" stroke="${T.plateStroke}" stroke-width="0.8"/>
+      <path fill="${T.door}" transform="translate(4 5) scale(${k})" d="${ICONS.door}"/>`,
     stretchX: [[18, 27]],
     stretchY: [[10, 12]],
     content: [17, 4, 29, 18],
@@ -100,9 +121,9 @@ function entranceLabel() {
 function entranceArrow() {
   return {
     width: 22, height: 22,
-    body: `<g filter="url(#shadow)"><circle cx="11" cy="11" r="8.5" fill="#fff"/></g>
-      <circle cx="11" cy="11" r="8.5" fill="none" stroke="#6B5B4B" stroke-width="1.2"/>
-      <path d="M11 4.8 15.4 12h-2.8v4.8H9.4V12H6.6z" fill="#3F7FD8"/>`,
+    body: `<g filter="url(#shadow)"><circle cx="11" cy="11" r="8.5" fill="${T.plate}"/></g>
+      <circle cx="11" cy="11" r="8.5" fill="none" stroke="${T.arrowRing}" stroke-width="1.2"/>
+      <path d="M11 4.8 15.4 12h-2.8v4.8H9.4V12H6.6z" fill="${T.arrowFill}"/>`,
   };
 }
 
@@ -110,15 +131,15 @@ function entranceArrow() {
 function lock() {
   return {
     width: 40, height: 40,
-    body: `<g filter="url(#shadow)"><circle cx="20" cy="20" r="16" fill="#fff" fill-opacity="0.96"/></g>
-      <circle cx="20" cy="20" r="16" fill="none" stroke="#D9D3CA" stroke-width="1"/>
-      <path fill="#6F6A62" transform="translate(10.5 10.5) scale(${19 / 24})" d="${ICONS.lock}"/>`,
+    body: `<g filter="url(#shadow)"><circle cx="20" cy="20" r="16" fill="${T.plate}" fill-opacity="0.96"/></g>
+      <circle cx="20" cy="20" r="16" fill="none" stroke="${T.lockStroke}" stroke-width="1"/>
+      <path fill="${T.lockGlyph}" transform="translate(10.5 10.5) scale(${19 / 24})" d="${ICONS.lock}"/>`,
   };
 }
 
 // Крона дерева с тенью (вид сверху).
 function crown(cx, cy, r, fill = 'crown') {
-  return `<ellipse cx="${cx + r * 0.22}" cy="${cy + r * 0.28}" rx="${r}" ry="${r * 0.92}" fill="#2f5a22" fill-opacity="0.32" filter="url(#${r > 11 ? 'softer' : 'soft'})"/>
+  return `<ellipse cx="${cx + r * 0.22}" cy="${cy + r * 0.28}" rx="${r}" ry="${r * 0.92}" fill="${T.crownShadow}" fill-opacity="0.32" filter="url(#${r > 11 ? 'softer' : 'soft'})"/>
     <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${fill})"/>`;
 }
 
@@ -158,7 +179,7 @@ function dot(r, ring, center) {
   const c = s / 2;
   return {
     width: s, height: s,
-    body: `<circle cx="${c}" cy="${c}" r="${r}" fill="#fff" stroke="${ring}" stroke-width="1.8"/>`
+    body: `<circle cx="${c}" cy="${c}" r="${r}" fill="${T.dotFill}" stroke="${ring}" stroke-width="1.8"/>`
       + (center ? `<circle cx="${c}" cy="${c}" r="${r * 0.42}" fill="${ring}"/>` : ''),
   };
 }
@@ -166,11 +187,55 @@ function dot(r, ring, center) {
 function peak() {
   return {
     width: 14, height: 13,
-    body: '<path d="M7 1.5 12.8 11.5H1.2z" fill="#8B6B4A" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/>',
+    body: `<path d="M7 1.5 12.8 11.5H1.2z" fill="${T.peak}" stroke="${T.peakStroke}" stroke-width="1.3" stroke-linejoin="round"/>`,
   };
 }
 
-export function spriteImages() {
+// Стрелка одностороннего движения: белая «разметка» по направлению линии дороги.
+function oneway() {
+  return { width: 20, height: 12, body: `<path d="M1.5 4.6h11V1.4L18.5 6l-6 4.6V7.4h-11z" fill="${T.oneway}"/>` };
+}
+
+// Светофор: три сигнала в тёмном корпусе с каймой под цвет плашек.
+function signals() {
+  return {
+    width: 12, height: 22,
+    body: `<g filter="url(#shadow)"><rect x="1" y="1" width="10" height="20" rx="3.5" fill="${T.signals}" stroke="${T.plate}" stroke-width="1.2"/></g>
+      <circle cx="6" cy="5.8" r="2.3" fill="#F0494E"/><circle cx="6" cy="11" r="2.3" fill="#F6B93B"/>
+      <circle cx="6" cy="16.2" r="2.3" fill="#3CC46A"/>`,
+  };
+}
+
+// Парковка: синий квадрат с белой «P», как на дорожном знаке.
+function parking() {
+  return {
+    width: 20, height: 20,
+    body: `<g filter="url(#shadow)"><rect x="2" y="2" width="16" height="16" rx="4" fill="#2F6FE4" stroke="${T.plate}" stroke-width="1.2"/></g>
+      <path fill="#fff" transform="translate(4 4) scale(${12 / 24})" d="${ICONS.parking}"/>`,
+  };
+}
+
+// Шлагбаум: столбик и полосатая стрела.
+function liftGate() {
+  const stripes = [6, 10, 14].map((x) => `<rect x="${x}" y="8" width="2.2" height="3" fill="${T.liftStripe}"/>`).join('');
+  return {
+    width: 22, height: 16,
+    body: `<g filter="url(#shadow)"><rect x="2" y="5" width="3" height="10" rx="1" fill="${T.liftPost}"/>
+      <rect x="4" y="8" width="16" height="3" rx="1.5" fill="#fff" stroke="${T.liftStripe}" stroke-width="0.6"/></g>${stripes}`,
+  };
+}
+
+// Маленький круглый значок для мелочей: ворота, лавочки, фонтаны, туалеты, вода.
+function smallBadge(color, icon) {
+  return {
+    width: 18, height: 18,
+    body: `<g filter="url(#shadow)"><circle cx="9" cy="9" r="7.6" fill="${T.plate}"/></g>
+      <circle cx="9" cy="9" r="6.3" fill="${color}"/>${glyph(icon, 9, 9, 8)}`,
+  };
+}
+
+export function spriteImages(theme = 'light') {
+  T = THEME[theme];
   const images = {};
   for (const { category, icon, color } of categoryIcons()) {
     images[`poi-${category}-${icon}`] = circleIcon(color, icon);
@@ -181,11 +246,20 @@ export function spriteImages() {
   images['label-entrance'] = entranceLabel();
   images['entrance-arrow'] = entranceArrow();
   images.lock = lock();
-  images['pattern-wood'] = treePattern(64, 14, 5.5, 8, '#86C463', 11);
-  images['dot-capital'] = dot(5.5, '#2B2B2B', true);
-  images['dot-city'] = dot(4, '#3A3A3A', false);
-  images['dot-town'] = dot(3, '#4A4A4A', false);
+  images['pattern-wood'] = treePattern(64, 14, 5.5, 8, T.wood, 11);
+  images['dot-capital'] = dot(5.5, T.dotRings[0], true);
+  images['dot-city'] = dot(4, T.dotRings[1], false);
+  images['dot-town'] = dot(3, T.dotRings[2], false);
   images.peak = peak();
+  images.oneway = oneway();
+  images.signals = signals();
+  images.parking = parking();
+  images['lift-gate'] = liftGate();
+  images.gate = smallBadge('#8A7F72', 'gate');
+  images.bench = smallBadge('#9A7B55', 'bench');
+  images.fountain = smallBadge('#3F8FD8', 'fountain');
+  images.toilets = smallBadge('#6E7D95', 'wc');
+  images.water = smallBadge('#35A3DC', 'drop');
   return images;
 }
 
@@ -214,7 +288,7 @@ export function sheetSvg({ placed, width, height }) {
     return `<g transform="translate(${p.x} ${p.y})"><g clip-path="url(#c${i})">${p.body}</g></g>`;
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-<defs>${DEFS}${clips.join('')}</defs>
+<defs>${defs()}${clips.join('')}</defs>
 ${parts.join('\n')}
 </svg>`;
 }

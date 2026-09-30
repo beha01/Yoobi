@@ -2,8 +2,10 @@
 # Собирает карту всего Таджикистана из свежей выгрузки OpenStreetMap:
 #
 #   data/tajikistan.pmtiles        — основные тайлы (схема OpenMapTiles, как у стиля)
-#   data/tajikistan-extra.pmtiles  — объёмные деревья и подъезды (scripts/extras.py + tiles/extra.yml)
+#   data/tajikistan-extra.pmtiles  — объёмные деревья, подъезды, «зебры», заборы, парковки, светофоры
+#                                    и названия зданий (scripts/extras.py + tiles/extra.yml)
 #   data/tajikistan-mask.geojson   — точный контур страны для «заморозки» соседей
+#   data/tajikistan-search.json    — индекс поиска: города, улицы, дома и организации (src/search.js)
 #
 # Нужна Java 21+ (planetiler.jar скачается сам) или Docker.
 # Первый запуск скачивает вспомогательные данные (~1 ГБ), дальше — только выгрузку OSM.
@@ -99,9 +101,9 @@ elif ! fetch_osm "https://download.geofabrik.de/$GEOFABRIK_PATH-latest.osm.pbf";
   fetch_osm "http://download.geofabrik.de/$GEOFABRIK_PATH-latest.osm.pbf"
 fi
 
-# 2. Объёмные деревья, подъезды со стороной входа, точная маска страны и копия
-#    выгрузки без подписей соседних стран (scripts/extras.py, нужен pyosmium 4+;
-#    ставится в data/.venv сам).
+# 2. Объёмные деревья, подъезды со стороной входа, городские детали, индекс поиска,
+#    точная маска страны и копия выгрузки без подписей соседних стран
+#    (scripts/extras.py, нужен pyosmium 4+; ставится в data/.venv сам).
 PY=python3
 if ! python3 -c 'import osmium; osmium.FileProcessor' 2>/dev/null; then
   [[ -d data/.venv ]] || python3 -m venv data/.venv
@@ -109,7 +111,8 @@ if ! python3 -c 'import osmium; osmium.FileProcessor' 2>/dev/null; then
   PY=data/.venv/bin/python
 fi
 rm -f data/extras.osm.pbf
-"$PY" scripts/extras.py "$PBF" data/extras.osm.pbf "data/$AREA-mask.geojson" "data/$AREA-clipped.osm.pbf"
+"$PY" scripts/extras.py "$PBF" data/extras.osm.pbf "data/$AREA-mask.geojson" "data/$AREA-clipped.osm.pbf" \
+  --search="data/$AREA-search.json"
 
 # 3. Основные тайлы — из копии без подписей соседей, поэтому стиль рисует подписи
 #    Таджикистана поверх «заморозки». В подписи попадают только русский, таджикский
@@ -133,4 +136,4 @@ planetiler generate-custom \
   --output="$DATA/$AREA-extra.pmtiles" \
   --force
 
-ls -lh "data/$AREA.pmtiles" "data/$AREA-extra.pmtiles" "data/$AREA-mask.geojson" 2>/dev/null || true
+ls -lh "data/$AREA.pmtiles" "data/$AREA-extra.pmtiles" "data/$AREA-mask.geojson" "data/$AREA-search.json" 2>/dev/null || true
