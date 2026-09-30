@@ -8,7 +8,8 @@
 #   data/tajikistan-search.json    — индекс поиска: города, улицы, дома и организации (src/search.js)
 #
 # Организации берутся из OSM и из открытой базы Overture Maps (scripts/overture.py,
-# лицензии CDLA-Permissive-2.0 / Apache-2.0 / CC0): без неё — OVERTURE=0.
+# лицензии CDLA-Permissive-2.0 / Apache-2.0 / CC0), а дома, которых ещё нет в OSM, —
+# из контуров Microsoft/Google в Overture (ODbL): без них — OVERTURE=0.
 #
 # Нужна Java 21+ (planetiler.jar скачается сам) или Docker.
 # Первый запуск скачивает вспомогательные данные (~1 ГБ), дальше — только выгрузку OSM.
@@ -127,12 +128,33 @@ if [[ "${OVERTURE:-1}" == 1 ]]; then
   else
     echo "Overture Maps недоступен — организации только из OSM" >&2
   fi
-  [[ -f data/sources/overture-places.jsonl ]] && OVERTURE_ARGS=(--overture=data/sources/overture-places.jsonl)
+  [[ -f data/sources/overture-places.jsonl ]] && OVERTURE_ARGS+=(--overture=data/sources/overture-places.jsonl)
 fi
-
-rm -f data/extras.osm.pbf
-"$PY" scripts/extras.py "$PBF" data/extras.osm.pbf "data/$AREA-mask.geojson" "data/$AREA-clipped.osm.pbf" \
-  --search="data/$AREA-search.json" ${OVERTURE_ARGS[@]+"${OVERTURE_ARGS[@]}"}
+# Новые здания Overture выбираются по контуру страны, который пишет extras.py: на первом
+# запуске его ещё нет — тогда здания скачиваются после первого прогона, и он повторяется.
+fetch_buildings() {
+  [[ "${OVERTURE:-1}" == 1 && -f "data/$AREA-mask.geojson" ]] || return 1
+  if "$PY" scripts/overture.py --buildings data/sources/overture-buildings.jsonl.tmp --mask="data/$AREA-mask.geojson"; then
+    mv data/sources/overture-buildings.jsonl.tmp data/sources/overture-buildings.jsonl
+  else
+    echo "Новые здания Overture не скачаны — только дома OSM" >&2
+    return 1
+  fi
+}
+run_extras() {
+  local args=(${OVERTURE_ARGS[@]+"${OVERTURE_ARGS[@]}"})
+  [[ "${OVERTURE:-1}" == 1 && -f data/sources/overture-buildings.jsonl ]] && args+=(--buildings=data/sources/overture-buildings.jsonl)
+  rm -f data/extras.osm.pbf
+  "$PY" scripts/extras.py "$PBF" data/extras.osm.pbf "data/$AREA-mask.geojson" "data/$AREA-clipped.osm.pbf" \
+    --search="data/$AREA-search.json" ${args[@]+"${args[@]}"}
+}
+had_mask=0
+[[ -f "data/$AREA-mask.geojson" ]] && had_mask=1
+[[ $had_mask == 1 ]] && fetch_buildings || true
+run_extras
+if [[ $had_mask == 0 ]] && fetch_buildings; then
+  run_extras
+fi
 
 # 3. Основные тайлы — из копии без подписей соседей, поэтому стиль рисует подписи
 #    Таджикистана поверх «заморозки». В подписи попадают только русский, таджикский

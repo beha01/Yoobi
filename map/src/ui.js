@@ -10,13 +10,13 @@
 // Цвета панели следуют теме карты: setTheme() ставит data-yoobi-theme на контейнер.
 
 import { CATEGORY_BY_ID, AIRPORT, OTHER, ICONS } from './categories.js';
-import { normalize } from './search.js';
+import { normalize, formatRoutes } from './search.js';
 
 const TEXT = {
   ru: {
     placeholder: 'Адрес, улица, место', clear: 'Очистить', close: 'Закрыть', empty: 'Ничего не нашлось',
     emptyHint: 'Попробуйте улицу и номер дома или название места', building: 'Здание', inside: 'В здании',
-    nearby: 'Рядом', floors: (n) => `${n} ${plural(n, 'этаж', 'этажа', 'этажей')}`, copy: 'Скопировать координаты',
+    nearby: 'Рядом', entrances: 'Подъезды', floors: (n) => `${n} ${plural(n, 'этаж', 'этажа', 'этажей')}`, copy: 'Скопировать координаты',
     copied: 'Скопировано', results: 'Результаты поиска', km: 'км', m: 'м', loading: 'Загружаю поиск…',
     approx: 'Точное место не указано — показан центр города', source: 'Данные', postcode: 'Индекс',
     flats: 'Квартиры', nearest: 'Ближайший адрес',
@@ -24,7 +24,7 @@ const TEXT = {
   tg: {
     placeholder: 'Суроға, кӯча, макон', clear: 'Тоза кардан', close: 'Пӯшидан', empty: 'Ҳеҷ чиз ёфт нашуд',
     emptyHint: 'Кӯча ва рақами хона ё номи маконро нависед', building: 'Бино', inside: 'Дар бино',
-    nearby: 'Дар наздикӣ', floors: (n) => `${n} ошёна`, copy: 'Нусха гирифтан', copied: 'Нусха шуд',
+    nearby: 'Дар наздикӣ', entrances: 'Даромадгоҳҳо', floors: (n) => `${n} ошёна`, copy: 'Нусха гирифтан', copied: 'Нусха шуд',
     results: 'Натиҷаҳои ҷустуҷӯ', km: 'км', m: 'м', loading: 'Ҷустуҷӯ бор мешавад…',
     approx: 'Ҷойи дақиқ нишон дода нашудааст', source: 'Маълумот', postcode: 'Индекс', flats: 'Хонаҳо',
     nearest: 'Суроғаи наздиктарин',
@@ -32,7 +32,7 @@ const TEXT = {
   en: {
     placeholder: 'Address, street, place', clear: 'Clear', close: 'Close', empty: 'Nothing found',
     emptyHint: 'Try a street and house number or a place name', building: 'Building', inside: 'In this building',
-    nearby: 'Nearby', floors: (n) => `${n} ${n === 1 ? 'floor' : 'floors'}`, copy: 'Copy coordinates',
+    nearby: 'Nearby', entrances: 'Entrances', floors: (n) => `${n} ${n === 1 ? 'floor' : 'floors'}`, copy: 'Copy coordinates',
     copied: 'Copied', results: 'Search results', km: 'km', m: 'm', loading: 'Loading search…',
     approx: 'Exact location unknown — city centre shown', source: 'Data', postcode: 'Postcode',
     flats: 'Flats', nearest: 'Nearest address',
@@ -175,40 +175,40 @@ const I = {
 const CSS = `
 .yoobi-panel{--y-bg:#fff;--y-fg:#1f2329;--y-muted:#6b7280;--y-line:#e7e3dc;--y-hover:#f4f1ec;--y-accent:#2f6fe4;
   --y-shadow:0 6px 24px rgba(28,32,40,.16),0 1px 3px rgba(28,32,40,.1);--y-chip:#f3f0ea;
-  position:absolute;z-index:3;top:10px;left:10px;width:360px;max-width:calc(100% - 20px);
+  position:absolute;z-index:3;top:10px;left:10px;width:336px;max-width:calc(100% - 20px);
   display:flex;flex-direction:column;gap:8px;font:14px/1.35 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;
   color:var(--y-fg);pointer-events:none}
 [data-yoobi-theme="dark"] .yoobi-panel{--y-bg:#232830;--y-fg:#e8ebef;--y-muted:#9aa3ae;--y-line:#343b46;--y-hover:#2c323c;
   --y-accent:#6fa3f0;--y-shadow:0 8px 28px rgba(0,0,0,.45),0 1px 3px rgba(0,0,0,.3);--y-chip:#2c323c}
 .yoobi-panel>*{pointer-events:auto}
-.yoobi-box{display:flex;align-items:center;gap:6px;height:46px;padding:0 6px 0 14px;border-radius:14px;background:var(--y-bg);
+.yoobi-box{display:flex;align-items:center;gap:6px;height:42px;padding:0 5px 0 12px;border-radius:12px;background:var(--y-bg);
   box-shadow:var(--y-shadow)}
 .yoobi-box svg{flex:none;color:var(--y-muted)}
-.yoobi-box input{flex:1;min-width:0;height:100%;border:0;outline:0;background:transparent;color:var(--y-fg);font:inherit;font-size:16px}
+.yoobi-box input{flex:1;min-width:0;height:100%;border:0;outline:0;background:transparent;color:var(--y-fg);font:inherit;font-size:15px}
 .yoobi-box input::placeholder{color:var(--y-muted)}
 .yoobi-box input::-webkit-search-cancel-button{display:none}
-.yoobi-icon-btn{flex:none;display:grid;place-items:center;width:34px;height:34px;border:0;border-radius:10px;
+.yoobi-icon-btn{flex:none;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:9px;
   background:transparent;color:var(--y-muted);cursor:pointer}
 .yoobi-icon-btn:hover{background:var(--y-hover);color:var(--y-fg)}
 .yoobi-icon-btn:focus-visible,.yoobi-row:focus-visible{outline:2px solid var(--y-accent);outline-offset:-2px}
-.yoobi-list,.yoobi-card{background:var(--y-bg);border-radius:14px;box-shadow:var(--y-shadow);overflow:auto;max-height:min(62vh,520px)}
+.yoobi-list,.yoobi-card{background:var(--y-bg);border-radius:12px;box-shadow:var(--y-shadow);overflow:auto;max-height:min(60vh,500px)}
 .yoobi-list{padding:6px 0;margin:0;list-style:none}
-.yoobi-row{display:flex;align-items:center;gap:12px;padding:8px 14px;cursor:pointer}
+.yoobi-row{display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer}
 .yoobi-row[aria-selected="true"],.yoobi-row:hover{background:var(--y-hover)}
-.yoobi-dot{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:#fff}
-.yoobi-dot svg{width:17px;height:17px}
+.yoobi-dot{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;color:#fff}
+.yoobi-dot svg{width:15px;height:15px}
 .yoobi-row-text{flex:1;min-width:0}
-.yoobi-row-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yoobi-row-title{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .yoobi-row-title mark{background:none;color:var(--y-accent);font-weight:700}
-.yoobi-row-sub{color:var(--y-muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yoobi-row-sub{color:var(--y-muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .yoobi-row-dist{flex:none;color:var(--y-muted);font-size:12px;font-variant-numeric:tabular-nums}
 .yoobi-empty{padding:14px 16px;color:var(--y-muted)}
 .yoobi-empty b{display:block;color:var(--y-fg);font-weight:600;margin-bottom:2px}
-.yoobi-card{padding:14px 16px 12px;position:relative}
+.yoobi-card{padding:12px 14px 10px;position:relative}
 .yoobi-card-head{display:flex;gap:12px;align-items:flex-start;padding-right:30px}
-.yoobi-card-head .yoobi-dot{width:38px;height:38px}
-.yoobi-card-head .yoobi-dot svg{width:21px;height:21px}
-.yoobi-card h2{margin:0;font-size:17px;line-height:1.25;font-weight:650;text-wrap:balance}
+.yoobi-card-head .yoobi-dot{width:34px;height:34px}
+.yoobi-card-head .yoobi-dot svg{width:19px;height:19px}
+.yoobi-card h2{margin:0;font-size:16px;line-height:1.25;font-weight:650;text-wrap:balance}
 .yoobi-card-type{color:var(--y-muted);margin-top:2px}
 .yoobi-card-alt{color:var(--y-muted);font-size:13px;margin-top:1px}
 .yoobi-open{font-weight:600;color:#1e9e57}
@@ -226,8 +226,8 @@ const CSS = `
 .yoobi-section{margin-top:12px;border-top:1px solid var(--y-line);padding-top:10px}
 .yoobi-section h3{margin:0 0 4px;font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--y-muted)}
 .yoobi-section .yoobi-row{padding:6px 0;margin:0 -4px;border-radius:10px;padding-inline:4px}
-.yoobi-section .yoobi-dot{width:26px;height:26px}
-.yoobi-section .yoobi-dot svg{width:15px;height:15px}
+.yoobi-section .yoobi-dot{width:24px;height:24px}
+.yoobi-section .yoobi-dot svg{width:14px;height:14px}
 .yoobi-coords{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--y-muted);font-size:12px;font-variant-numeric:tabular-nums}
 .yoobi-coords button{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:8px;padding:4px 8px;
   background:var(--y-chip);color:var(--y-fg);font:inherit;cursor:pointer}
@@ -237,6 +237,7 @@ const CSS = `
 .yoobi-hidden{display:none!important}
 @media (max-width:560px){
   .yoobi-panel{top:8px;left:8px;width:auto;right:8px;max-width:none}
+  .yoobi-box input{font-size:16px}
   .yoobi-has-panel .maplibregl-ctrl-top-right{top:58px}
   .yoobi-card{position:fixed;left:0;right:0;bottom:0;border-radius:18px 18px 0 0;max-height:52vh;
     padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
@@ -256,10 +257,12 @@ function esc(s) {
 
 function badge(item) {
   if (item.kind === 'poi') {
+    // Тот же рисунок, что на карте: по типу места (кафе, банкомат, одежда), иначе — по категории.
     const cat = item.category === 'airport' ? AIRPORT : CATEGORY_BY_ID[item.category] || OTHER;
-    return { color: cat.color, icon: ICONS[cat.icon] || ICONS.dot };
+    return { color: cat.color, icon: ICONS[cat.icons?.[item.osmType] || cat.icon] || ICONS.dot };
   }
   if (item.kind === 'address') return { color: '#8a7f72', icon: I.building };
+  if (item.kind === 'entrance') return { color: '#7A6652', icon: ICONS.door };
   if (item.kind === 'street') return { color: '#7b8594', icon: I.street };
   return { color: '#5a6b85', icon: I.place };
 }
@@ -482,6 +485,7 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     for (const p of (info.phone || '').split(/\s*;\s*/).filter(Boolean).slice(0, 3)) {
       out.push(`<li>${svg(I.phone)}<a href="tel:${esc(p.replace(/[^\d+]/g, ''))}">${esc(p)}</a></li>`);
     }
+    if (info.routes) out.push(`<li>${svg(ICONS.bus)}<span>${esc(formatRoutes(info.routes, lang))}</span></li>`);
     if (info.site) out.push(`<li>${svg(I.globe)}${link(info.site)}</li>`);
     for (const social of [info.social, info.insta].filter(Boolean)) out.push(`<li>${svg(I.globe)}${link(social)}</li>`);
     const list = out.length ? `<ul class="yoobi-facts">${out.join('')}</ul>` : '';
@@ -506,14 +510,15 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
   }
 
   let related = [];
-  function show({ item, title, alt = '', type, extra = '', inside = [], nearby = [], nearbyTitle = t.nearby, at, marker = true }) {
-    related = [...inside, ...nearby];
+  function show({ item, title, alt = '', type, extra = '', inside = [], nearby = [], nearbyTitle = t.nearby, at, marker = true,
+    entrances = [] }) {
+    related = [...entrances, ...inside, ...nearby];
     const coords = `${at[1].toFixed(5)}, ${at[0].toFixed(5)}`;
     const sources = new Set([item, ...inside].map((r) => r.source).filter(Boolean));
     card.innerHTML = `<button type="button" class="yoobi-icon-btn yoobi-x" aria-label="${esc(t.close)}" title="${esc(t.close)}">${svg(I.close)}</button>
       <div class="yoobi-card-head">${dot(item)}<div><h2>${esc(title)}</h2>${alt ? `<div class="yoobi-card-alt">${esc(alt)}</div>` : ''}
       <div class="yoobi-card-type">${esc(type)}</div></div></div>
-      ${extra}${section(`${t.inside} · ${inside.length}`, inside)}${section(nearbyTitle, nearby)}
+      ${extra}${section(`${t.entrances} · ${entrances.length}`, entrances)}${section(`${t.inside} · ${inside.length}`, inside)}${section(nearbyTitle, nearby)}
       <div class="yoobi-coords"><span>${coords}</span><button type="button" title="${esc(t.copy)}">${svg(I.copy, 14)}<span>${esc(t.copy)}</span></button></div>
       ${sources.size ? `<div class="yoobi-source">${esc(t.source)}: ${[...sources].map(esc).join(', ')}</div>` : ''}`;
     card.setAttribute('aria-label', title);
@@ -599,23 +604,34 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     setSelection(null);
   }
 
-  // Подсветка выбранного дома — отдельный источник поверх стиля.
-  function setSelection(feature) {
+  // Подсветка выбранного дома и его подъездов — отдельный источник поверх стиля.
+  function setSelection(feature, entrances = []) {
     const data = { type: 'FeatureCollection', features: feature ? [{ type: 'Feature', geometry: feature.geometry, properties: {
-      height: (feature.properties.render_height || 0) + 0.4, base: feature.properties.render_min_height || 0 } }] : [] };
+      height: (feature.properties.render_height || 0) + 0.4, base: feature.properties.render_min_height || 0 } },
+    ...entrances.map((e) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [e.lon, e.lat] },
+      properties: { label: e.title.replace(/^\D+/, '') || '•' } }))] : [] };
     if (!map.getSource('yoobi-selection')) {
       if (!feature) return;
       map.addSource('yoobi-selection', { type: 'geojson', data });
       const threeD = map.getLayer('building-3d') && map.getLayoutProperty('building-3d', 'visibility') !== 'none';
       // Подсветка — под подписями: номер дома и названия остаются поверх неё.
       const before = map.getLayer('housenumber') ? 'housenumber' : undefined;
+      const polygon = ['==', ['geometry-type'], 'Polygon'];
       map.addLayer({ id: 'yoobi-selection-fill', type: threeD ? 'fill-extrusion' : 'fill', source: 'yoobi-selection',
+        filter: polygon,
         paint: threeD
           ? { 'fill-extrusion-color': '#6FA3F0', 'fill-extrusion-opacity': 0.55, 'fill-extrusion-height': ['get', 'height'],
             'fill-extrusion-base': ['get', 'base'] }
           : { 'fill-color': '#6FA3F0', 'fill-opacity': 0.35 } }, before);
-      map.addLayer({ id: 'yoobi-selection-line', type: 'line', source: 'yoobi-selection',
+      map.addLayer({ id: 'yoobi-selection-line', type: 'line', source: 'yoobi-selection', filter: polygon,
         paint: { 'line-color': '#2F6FE4', 'line-width': 2 } }, before);
+      // Подъезды выбранного дома видны и издалека: дверь и номер.
+      map.addLayer({ id: 'yoobi-selection-entrances', type: 'symbol', source: 'yoobi-selection',
+        filter: ['==', ['geometry-type'], 'Point'],
+        layout: { 'icon-image': 'label-entrance', 'icon-text-fit': 'both', 'icon-text-fit-padding': [0, 2, 0, 1],
+          'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 11, 'text-anchor': 'left',
+          'text-offset': [1.35, 0], 'icon-allow-overlap': true, 'text-allow-overlap': true },
+        paint: { 'text-color': '#5B4A3A' } });
       return;
     }
     map.getSource('yoobi-selection').setData(data);
@@ -664,8 +680,9 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     const nearby = nearest ? [nearest] : found.places.length ? [] : search.nearby(lon, lat, { radius: 40, lang, limit: 5 });
     show({ item, title: address ? address.title : t.building, alt: address?.alt,
       type: houseType(address, building.properties.render_height), extra: houseFacts(address),
-      inside: found.places, nearby, nearbyTitle: nearest ? t.nearest : t.nearby, at: [lon, lat], marker: false });
-    setSelection(building);
+      entrances: found.entrances, inside: found.places, nearby, nearbyTitle: nearest ? t.nearest : t.nearby,
+      at: [lon, lat], marker: false });
+    setSelection(building, found.entrances);
   }
   const pointer = () => { map.getCanvas().style.cursor = 'pointer'; };
   const reset = () => { map.getCanvas().style.cursor = ''; };

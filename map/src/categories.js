@@ -33,6 +33,26 @@ export const ICONS = {
   bench: 'M3 7h18v3H3zM2 11.5h20v3H2zM4 14.5h2.5V20H4zM17.5 14.5H20V20h-2.5z',
   gate: 'M3 3h2.5v18H3zM18.5 3H21v18h-2.5zM6 6h12v2H6zM6 11h12v2H6zM6 16h12v2H6z',
   fountain: 'M12 3C7.9 3 4.8 6 4.5 10.5h2.2C7 7.3 9.2 5.2 12 5.2s5 2.1 5.3 5.3h2.2C19.2 6 16.1 3 12 3zM11 7.5h2V15h-2zM3 15h18v1.8c0 2.3-1.9 4.2-4.2 4.2H7.2C4.9 21 3 19.1 3 16.8z',
+  // Значки типов мест: продукты, одежда, связь, салоны, автосервис, банкомат, спорт…
+  basket: 'M17.21 9l-4.38-6.56a1 1 0 0 0-1.66 0L6.79 9H2c-.55 0-1 .45-1 1l.04.27 2.54 9.27c.23.84 1 1.46 1.92 1.46h13c.92 0 1.69-.62 1.93-1.46l2.54-9.27L23 10c0-.55-.45-1-1-1h-4.79zM9 9l3-4.4L15 9H9zm3 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z',
+  hanger: 'M21.6 18.2L13 11.75v-.91a3 3 0 0 0 2.43-4.05 3.1 3.1 0 0 0-2.61-2.7C10.54 3.57 8.5 5.3 8.5 7.5h2a1.5 1.5 0 1 1 1.47 1.5c-.54-.01-.97.45-.97.99v1.76L2.4 18.2c-.77.58-.36 1.8.6 1.8h18c.96 0 1.37-1.22.6-1.8zM6 18l6-4.5 6 4.5H6z',
+  phone: 'M15.5 1h-8A2.5 2.5 0 0 0 5 3.5v17A2.5 2.5 0 0 0 7.5 23h8a2.5 2.5 0 0 0 2.5-2.5v-17A2.5 2.5 0 0 0 15.5 1zm-4 21a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4.5-4H7V4h9v14z',
+  scissors: 'M9.64 7.64A4 4 0 1 0 6 10c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36A4 4 0 1 0 10 18c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64zM6 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 12a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM19 3l-6 6 2 2 7-7V3z',
+  car: 'M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm11 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM5 11l1.5-4.5h11L19 11H5z',
+  wrench: 'M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z',
+  burger: 'M2 16h20v2a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3zM3 12.5h18a1.5 1.5 0 0 1 0 3H3a1.5 1.5 0 0 1 0-3zM12 3c5.2 0 9 3 9 7.5H3C3 6 6.8 3 12 3z',
+  bar: 'M21 5V3H3v2l8 9v5H6v2h12v-2h-5v-5l8-9zM7.43 7L5.66 5h12.69l-1.78 2H7.43z',
+  sofa: 'M7 11v2h10v-2c0-1.86 1.28-3.41 3-3.86V6c0-1.65-1.35-3-3-3H7C5.35 3 4 4.35 4 6v1.14c1.72.45 3 2 3 3.86zm14-2a2 2 0 0 0-2 2v4H5v-4a2 2 0 1 0-4 0v5c0 1.65 1.35 3 3 3v1a1 1 0 0 0 2 0v-1h12v1a1 1 0 0 0 2 0v-1c1.65 0 3-1.35 3-3v-5a2 2 0 0 0-2-2z',
+  paw: 'M4.5 7a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zm4.5-4a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zm6 0a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zm4.5 4a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM12 10.6c1.3 0 2.2.8 3.1 1.9l2.4 2.9c1.2 1.3 2.5 2.7 2.2 4.4-.3 1.2-1.1 2-2.3 2.2-.8.1-3-.5-5.4-.5s-4.6.6-5.4.5c-1.2-.2-2-1-2.3-2.2-.3-1.7 1-3.1 2.2-4.4l2.4-2.9c.9-1.1 1.8-1.9 3.1-1.9z',
+  atm: 'M11 17h2v-1h1c.55 0 1-.45 1-1v-3c0-.55-.45-1-1-1h-3v-1h4V8h-2V7h-2v1h-1c-.55 0-1 .45-1 1v3c0 .55.45 1 1 1h3v1H9v2h2v1zm9-13H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4V6h16v12z',
+  stroller: 'M13 2v8h8c0-4.42-3.58-8-8-8zm6.32 13.89A6.95 6.95 0 0 0 21 11H6.44l-.95-2H2v2h2.22s1.89 4.07 2.12 4.42A3.5 3.5 0 1 0 11.46 19h2.08a3.5 3.5 0 1 0 5.78-3.11zM8 20a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z',
+  museum: 'M22 11V9L12 2 2 9v2h2v9H2v2h20v-2h-2v-9h2zm-6 7h-2v-4l-2 3-2-3v4H8v-7h2l2 3 2-3h2v7z',
+  shield: 'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z',
+  mail: 'M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z',
+  church: 'M11 1h2v2.5h2.5v2H13V8l6 4v10h-5v-4.5a2 2 0 0 0-4 0V22H5V12l6-4V5.5H8.5v-2H11z',
+  taxi: 'M18.92 6.01C18.72 5.42 18.16 5 17.5 5H15V3H9v2H6.5c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm11 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM5 11l1.5-4.5h11L19 11H5z',
+  dumbbell: 'M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29z',
+  briefcase: 'M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z',
 };
 
 // Порядок важен: подкатегории-исключения (например, «mall») проверяются раньше классов.
@@ -43,13 +63,21 @@ export const CATEGORIES = [
   {
     id: 'food', label: 'Рестораны', color: '#F7931E', icon: 'restaurant',
     classes: ['restaurant', 'fast_food', 'cafe', 'bar', 'beer', 'ice_cream'],
-    icons: { cafe: 'cafe', ice_cream: 'cafe' },
+    icons: { cafe: 'cafe', ice_cream: 'cafe', fast_food: 'burger', bar: 'bar', beer: 'bar', pub: 'bar' },
   },
   {
     id: 'shop', label: 'Магазины', color: '#1FAA59', icon: 'cart',
     classes: ['shop', 'grocery', 'alcohol_shop', 'clothing_store', 'bakery', 'butcher',
       'florist', 'mobile_phone', 'hairdresser', 'optician', 'jewelry', 'furniture',
       'hardware', 'books', 'music', 'car', 'bicycle'],
+    // Значки по типу: продукты, одежда, связь, салоны, авто, мебель, книги.
+    icons: {
+      grocery: 'basket', supermarket: 'basket', convenience: 'basket', greengrocer: 'basket', bakery: 'basket',
+      butcher: 'basket', clothing_store: 'hanger', clothes: 'hanger', shoes: 'hanger', boutique: 'hanger',
+      mobile_phone: 'phone', electronics: 'phone', computer: 'phone', hairdresser: 'scissors', beauty: 'scissors',
+      cosmetics: 'scissors', car: 'car', car_parts: 'car', car_repair: 'wrench', hardware: 'wrench',
+      furniture: 'sofa', books: 'book',
+    },
   },
   {
     id: 'pharmacy', label: 'Аптеки', color: '#E53935', icon: 'plus',
@@ -66,10 +94,12 @@ export const CATEGORIES = [
   {
     id: 'health', label: 'Больницы и клиники', color: '#EC407A', icon: 'hospital',
     classes: ['hospital', 'doctors', 'dentist', 'veterinary'],
+    icons: { veterinary: 'paw' },
   },
   {
     id: 'bank', label: 'Банки и банкоматы', color: '#0E9F8E', icon: 'bank',
     classes: ['bank', 'atm'],
+    icons: { atm: 'atm' },
   },
   {
     id: 'fuel', label: 'АЗС', color: '#3949AB', icon: 'fuel',
@@ -78,34 +108,39 @@ export const CATEGORIES = [
   {
     id: 'edu', label: 'Образование', color: '#56657C', icon: 'school', landmark: true,
     classes: ['college', 'school', 'kindergarten', 'library'],
-    icons: { library: 'book' },
+    icons: { library: 'book', kindergarten: 'stroller' },
   },
   {
     id: 'culture', label: 'Культура и досуг', color: '#7B5EA7', icon: 'star', landmark: true,
     classes: ['museum', 'theatre', 'cinema', 'art_gallery', 'attraction', 'monument',
       'memorial', 'castle', 'zoo', 'stadium'],
-    icons: { theatre: 'theater', cinema: 'theater' },
+    icons: { theatre: 'theater', cinema: 'theater', museum: 'museum', zoo: 'paw' },
   },
   {
     id: 'gov', label: 'Госучреждения', color: '#4F5D73', icon: 'landmark', landmark: true,
     subclasses: ['government'],
     classes: ['town_hall', 'police', 'post', 'fire_station', 'embassy'],
+    icons: { police: 'shield', post: 'mail', post_office: 'mail' },
   },
   {
     id: 'worship', label: 'Мечети и храмы', color: '#16A085', icon: 'mosque', landmark: true,
     classes: ['place_of_worship'],
+    icons: { christian: 'church', church: 'church' },
   },
   {
     id: 'transport', label: 'Транспорт', color: '#455A64', icon: 'train',
     subclasses: ['station', 'halt', 'bus_station', 'bus_stop', 'tram_stop'],
-    icons: { bus_station: 'bus', bus_stop: 'bus' },
+    icons: { bus_station: 'bus', bus_stop: 'bus', taxi: 'taxi' },
   },
 ];
 
 // Аэропорты (слой aerodrome_label) — отдельный значок того же цвета.
 export const AIRPORT = { id: 'airport', label: 'Аэропорты', color: '#455A64', icon: 'plane' };
 
-export const OTHER = { id: 'other', label: 'Прочее', color: '#8D8D8D', icon: 'dot' };
+export const OTHER = {
+  id: 'other', label: 'Прочее', color: '#8D8D8D', icon: 'dot',
+  icons: { fitness_centre: 'dumbbell', sports_centre: 'dumbbell', office: 'briefcase', car_repair: 'wrench', taxi: 'taxi' },
+};
 
 export const CATEGORY_BY_ID = Object.fromEntries(
   [...CATEGORIES, OTHER, AIRPORT].map((c) => [c.id, c]),
@@ -178,14 +213,14 @@ export function categoryExpression() {
   return expr;
 }
 
-// Выражение, дающее id картинки из спрайта: `${prefix}-<категория>-<иконка>`.
-// prefix: 'poi' — круглый значок, 'pill' — значок с «таблеткой», 'mark' — значок
-// знакового места с плашкой. only — ограничить выражение этими категориями.
+// Выражение, дающее id картинки из спрайта: `${prefix}-<категория>-<иконка>` (prefix — 'poi').
+// Сначала — значок по типу места (кафе, банкомат, одежда), потом — по категории.
+// only — ограничить выражение этими категориями.
 export function imageExpression(prefix, only = null) {
   const cats = only ? CATEGORIES.filter((c) => only.includes(c.id)) : CATEGORIES;
   const fallback = only ? `${prefix}-${cats[0].id}-${cats[0].icon}` : `${prefix}-${OTHER.id}-${OTHER.icon}`;
   const cases = ['case'];
-  for (const c of cats) {
+  for (const c of only ? cats : [...cats, OTHER]) {
     for (const [cls, icon] of Object.entries(c.icons || {})) {
       // Классы-исключения принадлежат только своей категории, поэтому хватает класса.
       cases.push(['any', ['==', ['get', 'class'], cls], ['==', ['get', 'subclass'], cls]],

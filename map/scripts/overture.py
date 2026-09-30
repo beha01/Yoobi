@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Организации Таджикистана из открытой базы Overture Maps (тема places).
+"""Организации и новые здания Таджикистана из открытой базы Overture Maps.
 
   python3 scripts/overture.py data/sources/overture-places.jsonl [--release=2026-09-23.1]
+  python3 scripts/overture.py --buildings data/sources/overture-buildings.jsonl --mask=data/tajikistan-mask.geojson
 
 Overture Maps Foundation публикует мировую базу мест (кафе, магазины, банки, клиники…)
 под открытыми лицензиями (CDLA-Permissive-2.0, Apache-2.0 — у каждой записи указан
@@ -13,6 +14,13 @@ Overture Maps Foundation публикует мировую базу мест (к
 телефоны, сайты, соцсети, адрес, бренд и источники. scripts/extras.py сверяет эти
 места с OSM (дубликаты рядом с тем же названием отбрасываются), кладёт в поиск и в
 дополнительные тайлы.
+
+Здания (--buildings): Overture объединяет OSM с контурами, которые Microsoft и Google
+распознали по спутниковым снимкам (лицензия ODbL, как у OSM). Берутся только здания
+не из OSM — это дома, которых в OSM ещё нет (новые кварталы, сёла). Файлы выбираются по
+каталогу STAC, группы строк — по контуру страны (--mask), поэтому из ~7 ГБ соседних
+файлов читается только Таджикистан. scripts/extras.py убирает те, что уже нарисованы
+в OSM после выхода Overture, и добавляет остальные в основные тайлы.
 
 Нужен pyarrow: pip install pyarrow
 """
@@ -159,6 +167,141 @@ def record(row):
     }
 
 
+STAC = 'https://stac.overturemaps.org'
+
+
+class Raster:
+    """Грубая сетка страны (клетки 0.02°) — быстрый ответ «пересекает ли рамка страну»."""
+
+    CELL = 0.02
+
+    def __init__(self, mask_path):
+        with open(mask_path, encoding='utf-8') as f:
+            g = json.load(f)
+        g = g.get('geometry', g)
+        polygons = g['coordinates'] if g['type'] == 'MultiPolygon' else [g['coordinates']]
+        # Маска «заморозки» — рамка с дырками: сама страна (и её анклавы) — это дырки.
+        if len(polygons) == 1 and len(polygons[0]) > 1 and len(polygons[0][0]) <= 5:
+            polygons = [[ring] for ring in polygons[0][1:]]
+        self.cells = set()
+        xs = [p[0] for poly in polygons for p in poly[0]]
+        ys = [p[1] for poly in polygons for p in poly[0]]
+        self.bbox = (min(xs), min(ys), max(xs), max(ys))
+        for poly in polygons:
+            ring = poly[0]
+            y0, y1 = min(p[1] for p in ring), max(p[1] for p in ring)
+            j = int(y0 // self.CELL)
+            while j * self.CELL <= y1:
+                y = (j + 0.5) * self.CELL
+                xs = sorted(ax + (y - ay) * (bx - ax) / (by - ay)
+                            for (ax, ay), (bx, by) in zip(ring, ring[1:] + ring[:1]) if (ay > y) != (by > y))
+                for a, b in zip(xs[::2], xs[1::2]):
+                    # С запасом в клетку: здания у самой границы проверит extras.py точно.
+                    for i in range(int(a // self.CELL) - 1, int(b // self.CELL) + 2):
+                        for dj in (-1, 0, 1):
+                            self.cells.add((i, j + dj))
+                j += 1
+
+    def hits(self, x1, y1, x2, y2):
+        c = self.CELL
+        if (x2 - x1) / c * (y2 - y1) / c > 40000:
+            return True  # большая рамка: проверять клетки дольше, чем прочитать
+        return any((i, j) in self.cells for i in range(int(x1 // c), int(x2 // c) + 1)
+                   for j in range(int(y1 // c), int(y2 // c) + 1))
+
+    def inside(self, x, y):
+        return (int(x // self.CELL), int(y // self.CELL)) in self.cells
+
+
+def wkb_polygons(wkb):
+    """Внешние кольца многоугольников из WKB (Polygon / MultiPolygon)."""
+    out = []
+
+    def read(pos):
+        order = '<' if wkb[pos] == 1 else '>'
+        kind = struct.unpack_from(order + 'I', wkb, pos + 1)[0] % 1000
+        pos += 5
+        if kind == 3:
+            rings = struct.unpack_from(order + 'I', wkb, pos)[0]
+            pos += 4
+            for r in range(rings):
+                n = struct.unpack_from(order + 'I', wkb, pos)[0]
+                pos += 4
+                coords = struct.unpack_from(order + 'd' * (2 * n), wkb, pos)
+                pos += 16 * n
+                if r == 0:
+                    out.append([(round(coords[k], 6), round(coords[k + 1], 6)) for k in range(0, 2 * n, 2)])
+            return pos
+        if kind == 6:
+            count = struct.unpack_from(order + 'I', wkb, pos)[0]
+            pos += 4
+            for _ in range(count):
+                pos = read(pos)
+            return pos
+        raise ValueError(f'WKB {kind}')
+
+    read(0)
+    return out
+
+
+def buildings(out, mask_path, release=None):
+    """Здания Overture не из OSM внутри страны → JSONL: кольцо, высота, этажность, источник."""
+    raster = Raster(mask_path)
+    if not release:
+        _, dirs = list_keys('release/', '/')
+        release = sorted(d.split('/')[1] for d in dirs)[-1]
+    collection = json.loads(fetch(f'{STAC}/{release}/buildings/building/collection.json'))
+    items = [link['href'] for link in collection['links'] if link['rel'] == 'item']
+    x1, y1, x2, y2 = raster.bbox
+    files = []
+    for href in items:
+        item = json.loads(fetch(href))
+        b = item.get('bbox')
+        if b and b[0] <= x2 and b[2] >= x1 and b[1] <= y2 and b[3] >= y1:
+            files.append(item['assets']['aws']['href'])
+    print(f'Overture {release}: зданий в {len(files)} файлах из {len(items)}')
+    columns = ['geometry', 'bbox', 'sources', 'height', 'num_floors']
+    total = fetched = 0
+    kinds = {}
+    with open(out, 'w', encoding='utf-8') as f:
+        for url in files:
+            src = RangeFile(url)
+            pf = pq.ParquetFile(src)
+            md = pf.metadata
+            idx = {md.schema.column(i).path: i for i in range(md.num_columns)}
+            groups = []
+            for i in range(md.num_row_groups):
+                rg = md.row_group(i)
+                st = [rg.column(idx[k]).statistics for k in ('bbox.xmin', 'bbox.ymin', 'bbox.xmax', 'bbox.ymax')]
+                if all(s is not None and s.has_min_max for s in st):
+                    if raster.hits(st[0].min, st[1].min, st[2].max, st[3].max):
+                        groups.append(i)
+                else:
+                    groups.append(i)
+            for i in groups:
+                for row in pf.read_row_group(i, columns=columns).to_pylist():
+                    b = row['bbox']
+                    if not raster.inside((b['xmin'] + b['xmax']) / 2, (b['ymin'] + b['ymax']) / 2):
+                        continue
+                    datasets = sorted({s['dataset'] for s in row['sources'] or [] if s.get('dataset')})
+                    if 'OpenStreetMap' in datasets:
+                        continue  # есть в OSM — уже в тайлах
+                    for ring in wkb_polygons(row['geometry']):
+                        rec = {'r': ring}
+                        if row['height']:
+                            rec['h'] = round(row['height'], 1)
+                        if row['num_floors']:
+                            rec['f'] = int(row['num_floors'])
+                        rec['s'] = ','.join(datasets)
+                        f.write(json.dumps(rec, separators=(',', ':')) + '\n')
+                        total += 1
+                        kinds[rec['s']] = kinds.get(rec['s'], 0) + 1
+            fetched += src.fetched
+            print(f'  {url.rsplit("/", 1)[1][:10]}: групп строк {len(groups)}/{md.num_row_groups}, '
+                  f'скачано {src.fetched / 1e6:.0f} МБ, зданий не из OSM {total}')
+    print(f'Готово: {out} — {total} зданий ({kinds}), скачано {fetched / 1e6:.0f} МБ')
+
+
 def main(out, release=None, bbox=BBOX):
     if not release:
         _, dirs = list_keys('release/', '/')
@@ -196,4 +339,7 @@ if __name__ == '__main__':
     opts = dict(a[2:].split('=', 1) for a in sys.argv[1:] if a.startswith('--') and '=' in a)
     if not args:
         sys.exit(__doc__)
-    main(args[0], opts.get('release'))
+    if '--buildings' in sys.argv:
+        buildings(args[0], opts.get('mask', 'data/tajikistan-mask.geojson'), opts.get('release'))
+    else:
+        main(args[0], opts.get('release'))

@@ -3,7 +3,7 @@
 
   python3 scripts/extras.py data/sources/tajikistan.osm.pbf data/extras.osm.pbf data/tajikistan-mask.geojson \\
       [data/tajikistan-clipped.osm.pbf] [--search=data/tajikistan-search.json] \\
-      [--overture=data/sources/overture-places.jsonl] [--decor]
+      [--overture=data/sources/overture-places.jsonl] [--buildings=data/sources/overture-buildings.jsonl] [--decor]
 
 Что получается (extras.osm.pbf Planetiler режет в тайлы по схеме tiles/extra.yml):
 
@@ -28,6 +28,10 @@
     организации с типом, часами работы, телефоном и сайтом — для src/search.js.
     Адреса записываются так, как их пишут 2ГИС и Яндекс Карты: «улица Бободжана
     Гафурова, 46/2» (см. scripts/places.py); у дома — тип здания, этажность, индекс.
+  * Новые здания (--buildings=…, scripts/overture.py --buildings): контуры, которые Microsoft
+    и Google распознали по снимкам, — у городов, посёлков и сёл, от 25 м², без тех, что уже
+    нарисованы в OSM. Добавляются в копию выгрузки для основных тайлов (building=yes,
+    высота и этажность, если известны), поэтому видны как обычные дома.
   * Организации Overture Maps (--overture=…, scripts/overture.py) сверяются с OSM:
     совпавшие дополняют места OSM телефонами и сайтами, новые попадают в поиск и в
     слой business дополнительных тайлов.
@@ -293,7 +297,7 @@ def is_label_key(key):
     return key.startswith('name') or '_name' in key or key.startswith('addr:')
 
 
-def write_clipped(src, dst, country):
+def write_clipped(src, dst, country, new_buildings=()):
     """Копия выгрузки без подписей соседних стран (см. описание модуля).
 
     Точки за границей теряют все теги (кроме вершин гор у самой границы, например
@@ -317,7 +321,36 @@ def write_clipped(src, dst, country):
             tags['addr:housenumber'] = number
         return o.replace(tags=tags)
 
+    # Новые здания дописываются в порядке выгрузки: их точки — после точек OSM, линии — после линий.
+    stage = 'nodes'
+
+    def add_new_nodes():
+        nid = ML_NODE_BASE
+        for ring, _h, _f in new_buildings:
+            for p in ring:
+                w.add_node(Node(id=nid, location=p, version=1))
+                nid += 1
+
+    def add_new_ways():
+        nid, wid = ML_NODE_BASE, ML_WAY_BASE
+        for ring, height, floors in new_buildings:
+            ids = list(range(nid, nid + len(ring)))
+            nid += len(ring)
+            tags = {'building': 'yes', 'source': 'Overture Maps (ML)'}
+            if height:
+                tags['height'] = f'{height:g}'
+            if floors:
+                tags['building:levels'] = str(floors)
+            w.add_way(Way(id=wid, nodes=ids + ids[:1], tags=tags, version=1))
+            wid += 1
+
     for o in osmium.FileProcessor(src).with_locations():
+        if stage == 'nodes' and not o.is_node():
+            add_new_nodes()
+            stage = 'ways'
+        if stage == 'ways' and o.is_relation():
+            add_new_ways()
+            stage = 'relations'
         if o.is_node():
             if len(o.tags) == 0:
                 w.add_node(o)
@@ -349,6 +382,10 @@ def write_clipped(src, dst, country):
                 cleaned += 1
             else:
                 w.add_relation(fixed(o))
+    if stage == 'nodes':
+        add_new_nodes()
+    if stage != 'relations':
+        add_new_ways()
     w.close()
     return cleaned
 
@@ -619,6 +656,9 @@ class Search:
         self.pois = []      # (lon, lat, имена, категория, тип, сведения)
         self.streets = defaultdict(list)  # (имя, клетка 3 км) -> [(lon, lat, имена)]
         self.addresses = []  # (lon, lat, улица, дом, сведения о доме)
+        self.stops = []      # (lon, lat, имена, id точки) — остановки с названием
+        self.routes = {}     # id точки -> {(вид, номер)} (read_routes)
+        self.entrances = []  # (lon, lat, номер, квартиры) — подъезды для карточки дома
 
     @staticmethod
     def names(t):
@@ -650,12 +690,12 @@ class Search:
 
         items = []
 
-        def add(names, kind, cat, lon, lat, typ='', info=None):
+        def add(names, kind, cat, lon, lat, typ='', info=None, required=True):
             if not country.contains(lon, lat):
                 return
             name, ru, tg, en = names
             title = ru or name
-            if not title:
+            if not title and required:
                 return
             # Местное имя в OSM обычно таджикское («Хуҷанд»): если name:tg нет, ищем и по нему.
             tg = tg or (name if name != title else '')
@@ -674,6 +714,21 @@ class Search:
             # «ул Абдукодир Исмоилов», «кӯчаи Айнӣ» → «улица …», таджикское имя — вторым.
             add((name, ru_street(ru or name), tg or tidy(name), en), 'street', '', lon, lat)
         streets = StreetIndex([w for ways in self.streets.values() for w in ways], to_xy)
+        # Остановки: номера маршрутов, как «Автобус 1, 4 · Троллейбус 2» в 2ГИС.
+        seen_stops = set()
+        for lon, lat, names, nid in self.stops:
+            key = (names[1] or names[0], round(lon, 3), round(lat, 3))  # платформа и столб — одна остановка
+            if key in seen_stops:
+                continue
+            seen_stops.add(key)
+            routes = defaultdict(set)
+            for kind, ref in self.routes.get(nid, ()):
+                routes[kind].add(ref)
+            info = {'routes': {k: sorted(v, key=lambda r: (len(r), r)) for k, v in routes.items()}} if routes else None
+            add(names, 'poi', 'transport', lon, lat, 'bus_stop', info)
+        # Подъезды: номер и квартиры — для карточки дома (в поиске по словам не участвуют).
+        for lon, lat, ref, flats in self.entrances:
+            add((ref or '', '', '', ''), 'entrance', '', lon, lat, '', {'fl': flats} if flats else None, required=False)
         for lon, lat, names, cat, typ, info in self.pois:
             if '_addr' in info:
                 street, number = info.pop('_addr')
@@ -734,6 +789,9 @@ class Details:
                 self.search.pois.append((lon, lat, Search.names(t), poi_category(t), *poi_details(t)))
         if 'addr:housenumber' in t:
             add_address(self.search.addresses, lon, lat, t)
+        if 'name' in t and (t.get('highway') == 'bus_stop' or t.get('public_transport') == 'platform'
+                            or t.get('railway') == 'tram_stop'):
+            self.search.stops.append((lon, lat, Search.names(t), o.id))
 
     def way(self, o, coords, refs):
         t = o.tags
@@ -805,6 +863,26 @@ class Obstacles:
         self.streets = []     # (класс, [(x, y)], [id точек]) — только для --decor
         self.node_use = defaultdict(int)
         self.entrance_out = []  # (lon, lat, угол, теги)
+        self.boxes = defaultdict(list)  # клетка 100 м -> рамки всех домов OSM
+
+    def add_box(self, box):
+        """Рамка дома OSM в сетке 100 м — для сверки с новыми зданиями Overture."""
+        x1, y1, x2, y2 = box
+        for i in range(int(x1 // 100), int(x2 // 100) + 1):
+            for j in range(int(y1 // 100), int(y2 // 100) + 1):
+                self.boxes[(i, j)].append(box)
+
+    def covered(self, box):
+        """Рамка заметно перекрывает дом OSM (больше 30% меньшей из двух)."""
+        x1, y1, x2, y2 = box
+        a = max((x2 - x1) * (y2 - y1), 1.0)
+        for i in range(int(x1 // 100), int(x2 // 100) + 1):
+            for j in range(int(y1 // 100), int(y2 // 100) + 1):
+                for bx1, by1, bx2, by2 in self.boxes.get((i, j), ()):
+                    w, h = min(x2, bx2) - max(x1, bx1), min(y2, by2) - max(y1, by1)
+                    if w > 0 and h > 0 and w * h > 0.3 * min(a, max((bx2 - bx1) * (by2 - by1), 1.0)):
+                        return True
+        return False
 
     def add_segment(self, a, b, half):
         # Запас на половину кроны: дерево не должно залезать на дорогу.
@@ -827,6 +905,23 @@ class Obstacles:
         return True
 
 
+ROUTE_KINDS = {'bus': 'bus', 'trolleybus': 'trolleybus', 'minibus': 'minibus', 'share_taxi': 'minibus', 'tram': 'tram'}
+
+
+def read_routes(path):
+    """Маршруты автобусов, троллейбусов и маршруток: id точки остановки -> {(вид, номер)}."""
+    stops = defaultdict(set)
+    for r in osmium.FileProcessor(path, osmium.osm.RELATION).with_filter(osmium.filter.KeyFilter('route')):
+        t = r.tags
+        kind = ROUTE_KINDS.get(t.get('route'))
+        if t.get('type') != 'route' or not kind or not t.get('ref'):
+            continue
+        for m in r.members:
+            if m.type == 'n' and m.role.startswith(('stop', 'platform')):
+                stops[m.ref].add((kind, t['ref']))
+    return stops
+
+
 def read_obstacles(path, active, entrances, details):
     """Второй проход: дома и дороги (для посадки деревьев и подъездов) и городские детали."""
     ob = Obstacles()
@@ -834,7 +929,8 @@ def read_obstacles(path, active, entrances, details):
     def in_active(x, y):
         return (tile_x(x), tile_y(y)) in active
 
-    keys = ('building', 'highway', 'barrier', 'place', 'addr:housenumber', 'railway', 'aeroway', *POI_KEYS)
+    keys = ('building', 'highway', 'barrier', 'place', 'addr:housenumber', 'railway', 'aeroway', 'public_transport',
+            *POI_KEYS)
     fp = (osmium.FileProcessor(path)
           .with_locations()
           .with_areas(osmium.filter.KeyFilter('building', 'aeroway', *POI_KEYS))
@@ -879,10 +975,56 @@ def read_obstacles(path, active, entrances, details):
                     continue
                 ring = [to_xy(*p) for p in lonlat]
                 box = bbox([ring])
+                ob.add_box(box)
                 if in_active(box[0], box[1]) or in_active(box[2], box[3]):
                     ob.buildings.append((box, ring))
                     ob.blocks.add_bbox(len(ob.buildings) - 1, box[0] - 6, box[1] - 6, box[2] + 6, box[3] + 6)
     return ob
+
+
+# ——— Новые здания: контуры Overture (Microsoft, Google), которых нет в OSM ———
+
+# Только у населённых пунктов (м), без навесов и сараев, без повторов с OSM.
+ML_RADIUS = {'city': 9000, 'town': 4000, 'village': 1500}
+ML_MIN_AREA = 25.0
+ML_NODE_BASE = 60_000_000_000   # номера точек и линий выше любых в OSM
+ML_WAY_BASE = 6_000_000_000
+
+
+def load_new_buildings(path, country, places, ob, active):
+    """Здания из scripts/overture.py --buildings, которые стоит добавить в основные тайлы."""
+    kept, stats = [], defaultdict(int)
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            rec = json.loads(line)
+            ring = [tuple(p) for p in rec['r']]
+            if len(ring) > 1 and ring[0] == ring[-1]:
+                ring = ring[:-1]
+            if len(ring) < 3:
+                continue
+            xy = [to_xy(*p) for p in ring]
+            cx = sum(x for x, _ in xy) / len(xy)
+            cy = sum(y for _, y in xy) / len(xy)
+            if not places.within(cx, cy, ML_RADIUS):
+                stats['вне населённых пунктов'] += 1
+                continue
+            if abs(sum(ax * by - bx * ay for (ax, ay), (bx, by) in zip(xy, xy[1:] + xy[:1]))) / 2 < ML_MIN_AREA:
+                stats['меньше 25 м²'] += 1
+                continue
+            if not country.contains(*to_lonlat(cx, cy)):
+                stats['за границей'] += 1
+                continue
+            box = bbox([xy])
+            if ob.covered(box):
+                stats['уже есть в OSM'] += 1
+                continue
+            kept.append((ring, rec.get('h'), rec.get('f')))
+            stats['добавлено'] += 1
+            # Деревья не сажаются в новых домах так же, как в домах OSM.
+            if (tile_x(box[0]), tile_y(box[1])) in active or (tile_x(box[2]), tile_y(box[3])) in active:
+                ob.buildings.append((box, xy))
+                ob.blocks.add_bbox(len(ob.buildings) - 1, box[0] - 6, box[1] - 6, box[2] + 6, box[3] + 6)
+    return kept, dict(stats)
 
 
 def entrance_angles(coords, refs, entrances, out):
@@ -1126,7 +1268,7 @@ def header_latitude(path):
     return (box.bottom_left.lat + box.top_right.lat) / 2 if box.valid() else 38.5
 
 
-def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path=None):
+def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path=None, buildings_path=None):
     set_projection(header_latitude(src))
     rnd = random.Random(7)
     nature = read_nature(src)
@@ -1151,7 +1293,12 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
                     for ty in range(tile_y(y + r), tile_y(y - r) + 1):
                         active.add((tx, ty))
     details = Details()
+    details.search.routes = read_routes(src)
     ob = read_obstacles(src, active, nature.entrances, details)
+    new_buildings = []
+    if buildings_path:  # и для основных тайлов, и чтобы деревья не росли в новых домах
+        new_buildings, stats = load_new_buildings(buildings_path, country, places, ob, active)
+        print('Новые здания Overture: ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
     if overture_path:
         with open(overture_path, encoding='utf-8') as f:
             records = [json.loads(line) for line in f if line.strip()]
@@ -1161,6 +1308,8 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
     trees = plant(nature, plans, ob, places, rnd)
     # Подъезды не на контуре здания — без направления.
     entrances = ob.entrance_out + [(lon, lat, None, tags) for lon, lat, tags in nature.entrances.values()]
+    details.search.entrances = [(lon, lat, tags.get('ref', ''), tags.get('addr:flats', ''))
+                                for lon, lat, _angle, tags in entrances]
     write(dst, trees, entrances, details, rnd)
     write_mask(mask_path, nature.country)
     per_tile = defaultdict(int)
@@ -1183,7 +1332,7 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
     if clipped_path:
         if not nature.country:
             print(f'Границы {COUNTRY} в выгрузке нет — подписи соседей не убираются', file=sys.stderr)
-        cleaned = write_clipped(src, clipped_path, country)
+        cleaned = write_clipped(src, clipped_path, country, new_buildings)
         print(f'выгрузка без подписей соседних стран: {clipped_path} (очищено объектов: {cleaned})')
 
 
@@ -1191,4 +1340,4 @@ if __name__ == '__main__':
     sys.setrecursionlimit(100000)
     opts = dict(a[2:].split('=', 1) for a in sys.argv[1:] if a.startswith('--') and '=' in a)
     main(*[a for a in sys.argv[1:] if not a.startswith('--')][:4], search_path=opts.get('search'),
-         overture_path=opts.get('overture'))
+         overture_path=opts.get('overture'), buildings_path=opts.get('buildings'))

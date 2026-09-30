@@ -1,10 +1,8 @@
 // Рисует картинки спрайта в SVG и раскладывает их на общий лист.
 // Размеры — в CSS-пикселях; спрайт собирается в 1x и 2x, в дневной и ночной теме.
 
-import { ICONS, CATEGORIES, categoryIcons } from '../src/categories.js';
-import { PILL, MARK } from '../src/style.js';
-
-const LANDMARK = new Set(CATEGORIES.filter((c) => c.landmark).map((c) => c.id));
+import { ICONS, categoryIcons } from '../src/categories.js';
+import { POI_RADIUS } from '../src/style.js';
 
 // Цвета подложек, колец и узоров: в ночной теме плашки тёмные, а значки остаются цветными.
 const THEME = {
@@ -53,53 +51,15 @@ function glyph(iconName, cx, cy, size) {
   return `<path fill="#fff" transform="translate(${cx - size / 2} ${cy - size / 2}) scale(${k})" d="${ICONS[iconName]}"/>`;
 }
 
-function badge(color, icon, cx, cy, r) {
-  return `<g filter="url(#shadow)"><circle cx="${cx}" cy="${cy}" r="${r}" fill="${T.plate}"/></g>
-    <circle cx="${cx}" cy="${cy}" r="${r - 2}" fill="${color}"/>
-    ${glyph(icon, cx, cy, r * 1.07)}`;
-}
-
-// Круглый значок (мелкие масштабы).
-function circleIcon(color, icon) {
-  return { width: 30, height: 30, body: badge(color, icon, 15, 15, 12.5) };
-}
-
-// Значок слева + белая «таблетка» под название (одна строка).
-function pill(color, icon) {
-  const { width: w, height: h, circleX: cx, contentLeft: cl, contentHeight: ch } = PILL;
-  const top = (h - ch) / 2;
+// Значок места, как в 2ГИС и Яндекс Картах: цветной круг с белым рисунком, тонкая
+// светлая кайма и мягкая тень. 24×24, круг радиусом POI_RADIUS (по нему стиль
+// отодвигает подпись).
+function poiIcon(color, icon) {
+  const r = POI_RADIUS;
   return {
-    width: w, height: h,
-    body: `<g filter="url(#shadow)"><rect x="18" y="4" width="${w - 22}" height="${h - 8}" rx="8" fill="${T.plate}"/></g>
-      ${badge(color, icon, cx, h / 2, 15)}`,
-    stretchX: [[cl + 3, w - 14]],
-    stretchY: [[h / 2 - 1, h / 2 + 1]],
-    content: [cl, top, w - 12, top + ch],
-  };
-}
-
-// Значок над зданием + полупрозрачная плашка под ним (подпись в несколько строк).
-// Растягиваются только поля плашки слева и справа от круга, поэтому круг не искажается.
-function mark(color, icon) {
-  const { width: w, circleY: cy, contentTop: ct, contentHeight: ch } = MARK;
-  return {
-    width: w, height: MARK.height,
-    body: `<g filter="url(#shadow)"><rect x="4" y="36" width="${w - 8}" height="24" rx="8" fill="${T.plate}" fill-opacity="0.94"/></g>
-      ${badge(color, icon, w / 2, cy, 15)}`,
-    stretchX: [[6, 16], [w - 16, w - 6]],
-    stretchY: [[46, 50]],
-    content: [10, ct, w - 10, ct + ch],
-  };
-}
-
-// Зелёная плашка для названий парков и садов.
-function parkLabel() {
-  return {
-    width: 40, height: 30,
-    body: `<rect x="2" y="2" width="36" height="26" rx="9" fill="${T.park}" fill-opacity="0.9"/>`,
-    stretchX: [[12, 28]],
-    stretchY: [[13, 17]],
-    content: [10, 7, 30, 23],
+    width: 24, height: 24,
+    body: `<g filter="url(#shadow)"><circle cx="12" cy="12" r="${r}" fill="${T.plate}"/></g>
+      <circle cx="12" cy="12" r="${r - 1.4}" fill="${color}"/>${glyph(icon, 12, 12, 11.5)}`,
   };
 }
 
@@ -238,11 +198,8 @@ export function spriteImages(theme = 'light') {
   T = THEME[theme];
   const images = {};
   for (const { category, icon, color } of categoryIcons()) {
-    images[`poi-${category}-${icon}`] = circleIcon(color, icon);
-    images[`pill-${category}-${icon}`] = pill(color, icon);
-    if (LANDMARK.has(category)) images[`mark-${category}-${icon}`] = mark(color, icon);
+    images[`poi-${category}-${icon}`] = poiIcon(color, icon);
   }
-  images['label-park'] = parkLabel();
   images['label-entrance'] = entranceLabel();
   images['entrance-arrow'] = entranceArrow();
   images.lock = lock();

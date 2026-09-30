@@ -55,7 +55,7 @@ const RUBRICS = {
   culture: 'музей театр кино кинотеатр памятник стадион осорхона museum theatre cinema',
   gov: 'министерство хукумат полиция почта суд посольство вазорат police post embassy',
   worship: 'мечеть храм церковь масҷид mosque church',
-  transport: 'вокзал автовокзал станция остановка истгоҳ station bus',
+  transport: 'вокзал автовокзал станция остановка истгоҳ автобус маршрутка троллейбус трамвай station bus stop',
   airport: 'аэропорт фурудгоҳ airport',
 };
 
@@ -116,6 +116,20 @@ const BUILDING_OTHER = {
 };
 
 const human = (s) => (s ? s[0].toUpperCase() + s.slice(1).replace(/_/g, ' ') : '');
+
+// Маршруты на остановке: «Автобус 1, 4 · Троллейбус 2».
+const ROUTE_LABEL = {
+  ru: { bus: 'Автобус', trolleybus: 'Троллейбус', minibus: 'Маршрутка', tram: 'Трамвай' },
+  tg: { bus: 'Автобус', trolleybus: 'Троллейбус', minibus: 'Маршрутка', tram: 'Трамвай' },
+  en: { bus: 'Bus', trolleybus: 'Trolleybus', minibus: 'Minibus', tram: 'Tram' },
+};
+const ENTRANCE_LABEL = { ru: 'Подъезд', tg: 'Даромадгоҳ', en: 'Entrance' };
+
+/** Номера маршрутов остановки одной строкой на нужном языке. */
+export function formatRoutes(routes, lang = 'ru') {
+  const labels = ROUTE_LABEL[lang] || ROUTE_LABEL.ru;
+  return Object.entries(routes || {}).map(([kind, refs]) => `${labels[kind] || kind} ${refs.join(', ')}`).join(' · ');
+}
 
 // Тип места, когда точного (SUBCLASS_RU) нет: в единственном числе, а не как название рубрики.
 const CATEGORY_ONE = {
@@ -197,10 +211,18 @@ export function createSearch(data) {
       houses[it.id] = m ? normalize(m[1]).replace(/\s+/g, '') : '';
     }
     it.norm = normalize(it.name);
+    if (it.kind === 'entrance') continue; // подъезды — только для карточки дома, не для поиска по словам
     for (const w of words) if (!STOP.has(w)) add(names, w, it.id);
     if (it.kind === 'poi') {
       const typed = tokenize(SUBCLASS_RU[it.type] || '').filter((w) => w.length > 2);
       for (const w of [...typed, ...(rubricWords[it.category] || [])]) if (!words.has(w)) add(rubrics, w, it.id);
+    }
+    // Номера маршрутов остановки: «автобус 4» находит остановки, где он ходит.
+    if (it.info?.routes) {
+      it.refs = Object.values(it.info.routes).flat().map(normalize);
+      for (const kind of Object.keys(it.info.routes)) {
+        for (const w of tokenize(`${ROUTE_LABEL.ru[kind] || ''} ${ROUTE_LABEL.en[kind] || ''}`)) add(rubrics, w, it.id);
+      }
     }
   }
   const nameDict = [...names.keys()].sort();
@@ -270,8 +292,10 @@ export function createSearch(data) {
       for (const s of sets) score += 6 + 8 * s.get(id);
       if (numbers.length) {
         if (it.kind !== 'address') {
-          // Цифры могут быть частью названия («Школа № 12»).
-          if (!numbers.every((n) => tokenize(it.name).some((t) => t.startsWith(n)))) continue;
+          // Цифры могут быть частью названия («Школа № 12») или номером маршрута на остановке.
+          const own = it.refs ? tokenize(it.name).concat(it.refs) : tokenize(it.name);
+          if (!numbers.every((n) => own.some((t) => t === n || t.startsWith(n)))) continue;
+          if (it.refs && numbers.every((n) => it.refs.includes(n))) score += 20; // номер — это маршрут
         } else {
           const house = houses[id];
           const n = numbers.join('/');
@@ -290,12 +314,15 @@ export function createSearch(data) {
       }
       results.push({ it, score: score - penalty });
     }
-    // Такого дома нет — покажем хотя бы улицу или место без номера.
-    if (!results.length && numbers.length && words.length) return run(text, center, penalty + 10, false);
+    // Такого дома нет — покажем хотя бы улицу или населённый пункт без номера.
+    if (!results.length && numbers.length && words.length) {
+      return run(text, center, penalty + 10, false).filter((r) => r.it.kind === 'street' || r.it.kind === 'place');
+    }
     return results;
   }
 
   function title(it, lang) {
+    if (it.kind === 'entrance') return [ENTRANCE_LABEL[lang] || ENTRANCE_LABEL.ru, it.name].filter(Boolean).join(' ');
     if (lang === 'tg') return it.name_tg || it.name;
     if (lang === 'en') return it.name_en || it.name;
     return it.name;
@@ -303,6 +330,7 @@ export function createSearch(data) {
 
   function typeLabel(it, lang) {
     if (it.kind === 'place') return PLACE_LABEL[lang][it.category] || PLACE_LABEL[lang].village;
+    if (it.kind === 'entrance') return it.info?.fl ? `кв. ${it.info.fl}` : '';
     if (it.kind === 'address' && it.type) {
       const other = BUILDING_OTHER[lang];
       return (other ? other[it.type] || other.yes : BUILDING_RU[it.type]) || KIND_LABEL[lang].address;
@@ -314,7 +342,9 @@ export function createSearch(data) {
 
   function present(it, lang, center) {
     // Адрес места — если в нём есть номер дома; «Согдийская область» вместо адреса — это не адрес.
-    const where = it.kind === 'poi' && /\d/.test(it.info?.addr || '') ? it.info.addr : it.place;
+    // У остановки вместо адреса — номера маршрутов.
+    const where = it.info?.routes ? formatRoutes(it.info.routes, lang)
+      : it.kind === 'poi' && /\d/.test(it.info?.addr || '') ? it.info.addr : it.place;
     const self = it.kind === 'place' && where === it.name;
     return {
       id: it.id,
@@ -424,12 +454,16 @@ export function createSearch(data) {
         const [x2, y2] = r[(i + 1) % r.length];
         return segmentDistance(it.lon, it.lat, x, y, x2, y2) <= margin;
       }));
-      const hits = near(lon, lat, radius, (it) => (it.kind === 'poi' || it.kind === 'address')
+      const hits = near(lon, lat, radius, (it) => (it.kind === 'poi' || it.kind === 'address' || it.kind === 'entrance')
         && (polygons.some((p) => inPolygon(it.lon, it.lat, p)) || edge(it)));
       const address = hits.find(([, it]) => it.kind === 'address');
+      const number = (it) => parseInt(it.name, 10) || 999;
       return {
         address: address ? present(address[1], lang) : null,
         places: hits.filter(([, it]) => it.kind === 'poi').map(([, it]) => present(it, lang)),
+        // Подъезды по порядку номеров, как в 2ГИС: «Подъезд 1 · кв. 1–36».
+        entrances: hits.filter(([, it]) => it.kind === 'entrance').map(([, it]) => it)
+          .sort((a, b) => number(a) - number(b)).map((it) => present(it, lang)),
       };
     },
   };

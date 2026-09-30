@@ -47,8 +47,10 @@ export const DEFAULTS = {
 };
 
 // Геометрия картинок спрайта, от которой зависит раскладка подписей (см. scripts/sprite.mjs).
-export const PILL = { width: 68, height: 34, circleX: 17, contentLeft: 37, contentHeight: 18 };
-export const MARK = { width: 64, height: 64, circleY: 16, contentTop: 40, contentHeight: 16 };
+// Значок места в спрайте: круг радиусом POI_RADIUS в картинке 24×24 (scripts/sprite.mjs).
+export const POI_RADIUS = 10;
+// Подпись места ставится справа от значка, а если там тесно — слева, снизу или сверху (как в 2ГИС).
+const POI_ANCHORS = ['left', 'right', 'top', 'bottom'];
 
 export const COLORS = {
   land: '#EEE9E0',
@@ -98,9 +100,9 @@ export const COLORS = {
   halo: '#FFFFFF',
   waterLabel: '#1F6FA5',
   peak: '#7A5C3E',
-  poiLabel: '#1E1E1E',
+  poiLabel: '#2B2B2B',
   landmarkLabel: '#2A2A2A',
-  parkLabel: '#FFFFFF',
+  parkLabel: '#3E8A37',
   orchard: '#C6E0A0',
   vineyard: '#D7E5AE',
   hillShadow: '#9C8F7A',
@@ -190,6 +192,7 @@ export const NIGHT_COLORS = {
   peak: '#C7A57D',
   poiLabel: '#E6E9ED',
   landmarkLabel: '#E6E9ED',
+  parkLabel: '#7CC47A',
   orchard: '#29372A',
   vineyard: '#2E3629',
   hillShadow: '#000000',
@@ -1366,25 +1369,35 @@ export function businessFilter(kind, category = null) {
   return filter;
 }
 
-// Организации из Overture Maps, которых нет в OSM: кафе, магазины, салоны, офисы.
-// Те же «таблетки», что у мест OSM; появляются ближе и уступают им место.
-function businessLayers(o, C) {
-  const name = nameExpression(o.lang);
-  const v = Math.round(((PILL.contentHeight - 1.2 * 12.5) / 2) * 100) / 100;
-  const layout = {
-    'icon-image': businessImage('pill'),
-    'icon-text-fit': 'both',
-    'icon-text-fit-padding': [v, 3, v, 3],
+// Значок и подпись места: круг значка — в точке места, подпись — рядом с ним.
+// Если подписи не хватает места, остаётся только значок (как в 2ГИС и Яндекс Картах).
+function poiLayout(image, name, { size = 12.5, iconSize = 1, anchors = POI_ANCHORS, sort } = {}) {
+  return {
+    'icon-image': image,
+    'icon-size': iconSize,
+    'icon-padding': 1,
     'text-field': name,
     'text-font': FONT.regular,
-    'text-size': 12.5,
-    'text-line-height': 1.2,
-    'text-anchor': 'left',
-    'text-offset': [(PILL.contentLeft - PILL.circleX + 3) / 12.5, 0],
-    'text-max-width': 30,
+    'text-size': size,
+    'text-line-height': 1.15,
+    'text-max-width': 9,
+    'text-variable-anchor': anchors,
+    'text-radial-offset': Math.round(((POI_RADIUS * iconSize + 3) / size) * 100) / 100,
+    'text-justify': 'auto',
     'text-padding': 2,
-    'symbol-sort-key': ['coalesce', ['get', 'rank'], 3],
+    'text-optional': true,
+    ...(sort ? { 'symbol-sort-key': sort } : {}),
   };
+}
+
+function poiPaint(C, color = C.poiLabel) {
+  return { 'text-color': color, 'text-halo-color': C.halo, 'text-halo-width': 1.5, 'text-halo-blur': 0.4 };
+}
+
+// Организации из Overture Maps, которых нет в OSM: кафе, магазины, салоны, офисы.
+// Тот же вид, что у мест OSM; появляются ближе и уступают им место.
+function businessLayers(o, C) {
+  const name = nameExpression(o.lang);
   const layer = (id, kind, minzoom) => ({
     id,
     type: 'symbol',
@@ -1393,8 +1406,8 @@ function businessLayers(o, C) {
     minzoom,
     filter: businessFilter(kind, o.category),
     metadata: { 'yoobi:business': kind, 'yoobi:group': 'poi', 'yoobi:text': 'name' },
-    layout,
-    paint: { 'text-color': C.poiLabel, 'text-opacity': zoomLinear(minzoom, 0, minzoom + 0.3, 1),
+    layout: poiLayout(businessImage('poi'), name, { size: 12, iconSize: 0.92, sort: ['coalesce', ['get', 'rank'], 3] }),
+    paint: { ...poiPaint(C), 'text-opacity': zoomLinear(minzoom, 0, minzoom + 0.3, 1),
       'icon-opacity': zoomLinear(minzoom, 0, minzoom + 0.3, 1) },
   });
   return [layer('business-minor', 'minor', 17.3), layer('business-main', 'main', 16.2)];
@@ -1404,48 +1417,10 @@ function poiLayers(o, C) {
   const name = nameExpression(o.lang);
   const base = { type: 'symbol', source: SOURCE, 'source-layer': 'poi' };
   const sort = ['coalesce', ['get', 'rank'], 99];
-  // Строка текста занимает 1.2 × size по высоте; отступы добирают её до высоты
-  // области content в картинке, чтобы круг значка не растягивался.
-  const pill = (size) => {
-    const v = Math.round(((PILL.contentHeight - 1.2 * size) / 2) * 100) / 100;
-    return {
-      'icon-image': imageExpression('pill'),
-      'icon-text-fit': 'both',
-      'icon-text-fit-padding': [v, 3, v, 3],
-      'text-field': name,
-      'text-font': FONT.regular,
-      'text-size': size,
-      'text-line-height': 1.2,
-      'text-anchor': 'left',
-      // Круг значка — левее текста: сдвигаем текст так, чтобы круг был в точке места.
-      'text-offset': [(PILL.contentLeft - PILL.circleX + 3) / size, 0],
-      'text-max-width': 40,
-      'text-padding': 2,
-      'symbol-sort-key': sort,
-    };
-  };
-  const mark = (size) => {
-    const v = Math.round(((MARK.contentHeight - 1.2 * size) / 2) * 100) / 100;
-    return {
-      'icon-image': imageExpression('mark', LANDMARK_CATEGORIES),
-      'icon-text-fit': 'both',
-      'icon-text-fit-padding': [v, 3, v, 3],
-      'text-field': name,
-      'text-font': FONT.regular,
-      'text-size': size,
-      'text-line-height': 1.2,
-      'text-anchor': 'top',
-      'text-justify': 'center',
-      // Круг значка — над плашкой: сдвигаем текст вниз, чтобы круг был в точке места.
-      'text-offset': [0, (MARK.contentTop - MARK.circleY + v) / size],
-      'text-max-width': 9,
-      'text-padding': 2,
-      'symbol-sort-key': sort,
-    };
-  };
-  const paint = { 'text-color': C.poiLabel };
+  const image = imageExpression('poi');
   const meta = (kind, textKind = 'name') => ({ 'yoobi:poi': kind, 'yoobi:group': 'poi', ...(textKind && { 'yoobi:text': textKind }) });
   return [
+    // Издалека — только значки самых важных мест.
     {
       ...base,
       id: 'poi-icon',
@@ -1453,11 +1428,23 @@ function poiLayers(o, C) {
       maxzoom: 15,
       filter: poiFilter('icon', o.category),
       metadata: meta('icon', null),
-      layout: { 'icon-image': imageExpression('poi'), 'icon-padding': 1, 'symbol-sort-key': sort },
+      layout: { 'icon-image': image, 'icon-size': 0.82, 'icon-padding': 2, 'symbol-sort-key': sort },
     },
-    { ...base, id: 'poi-minor', minzoom: 17, filter: poiFilter('minor', o.category), metadata: meta('minor'), layout: pill(12), paint },
-    { ...base, id: 'poi-label', minzoom: 15, filter: poiFilter('main', o.category), metadata: meta('main'), layout: pill(13), paint },
-    { ...base, id: 'poi-landmark', minzoom: 15, filter: poiFilter('landmark', o.category), metadata: meta('landmark'), layout: mark(13), paint: { 'text-color': C.landmarkLabel } },
+    {
+      ...base, id: 'poi-minor', minzoom: 17, filter: poiFilter('minor', o.category), metadata: meta('minor'),
+      layout: poiLayout(image, name, { size: 11.5, iconSize: 0.85, sort }), paint: poiPaint(C),
+    },
+    {
+      ...base, id: 'poi-label', minzoom: 15, filter: poiFilter('main', o.category), metadata: meta('main'),
+      layout: poiLayout(image, name, { sort }), paint: poiPaint(C),
+    },
+    // Знаковые места (вузы, музеи, мечети, госучреждения) — значок крупнее, подпись под ним.
+    {
+      ...base, id: 'poi-landmark', minzoom: 15, filter: poiFilter('landmark', o.category), metadata: meta('landmark'),
+      layout: poiLayout(image, name, { size: 12.5, iconSize: 1.15, anchors: ['top', 'left', 'right', 'bottom'], sort }),
+      paint: poiPaint(C, C.landmarkLabel),
+    },
+    // Парки и сады — зелёной подписью, без значка.
     {
       ...base,
       id: 'park-label',
@@ -1465,18 +1452,15 @@ function poiLayers(o, C) {
       filter: ['all', hasName, ['in', ['get', 'class'], ['literal', ['park', 'garden']]]],
       metadata: { 'yoobi:text': 'name' },
       layout: {
-        'icon-image': 'label-park',
-        'icon-text-fit': 'both',
-        'icon-text-fit-padding': [0, 4, 0, 4],
         'text-field': name,
-        'text-font': FONT.bold,
-        'text-size': 13.5,
-        'text-line-height': 1.2,
-        'text-max-width': 9,
+        'text-font': FONT.italic,
+        'text-size': 12.5,
+        'text-line-height': 1.15,
+        'text-max-width': 8,
         'text-padding': 4,
         'symbol-sort-key': sort,
       },
-      paint: { 'text-color': C.parkLabel },
+      paint: poiPaint(C, C.parkLabel),
     },
     {
       id: 'airport-label',
@@ -1486,12 +1470,10 @@ function poiLayers(o, C) {
       minzoom: 10,
       filter: poiFilter('airport', o.category),
       metadata: meta('airport'),
-      layout: {
-        ...pill(13),
-        'icon-image': `pill-${AIRPORT.id}-${AIRPORT.icon}`,
-        'symbol-sort-key': ['match', ['get', 'class'], 'international', 0, 1],
-      },
-      paint,
+      layout: poiLayout(`poi-${AIRPORT.id}-${AIRPORT.icon}`, name, {
+        size: 12.5, iconSize: 1.1, sort: ['match', ['get', 'class'], 'international', 0, 1],
+      }),
+      paint: poiPaint(C),
     },
   ];
 }
