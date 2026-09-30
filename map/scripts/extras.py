@@ -3,18 +3,21 @@
 
   python3 scripts/extras.py data/sources/tajikistan.osm.pbf data/extras.osm.pbf data/tajikistan-mask.geojson \\
       [data/tajikistan-clipped.osm.pbf] [--search=data/tajikistan-search.json] \\
-      [--overture=data/sources/overture-places.jsonl] [--buildings=data/sources/overture-buildings.jsonl] [--decor]
+      [--overture=data/sources/overture-places.jsonl] [--buildings=data/sources/overture-buildings.jsonl] \\
+      [--decor] [--no-parks]
 
 Что получается (extras.osm.pbf Planetiler режет в тайлы по схеме tiles/extra.yml):
 
-  * Объёмные деревья: каждое дерево — несколько ярусов кроны (многоугольники с
-    высотой), которые стиль рисует через fill-extrusion. Так деревья выглядят
-    объёмно и правильно заслоняются зданиями. Источники:
+  * Деревья: каждое дерево — точка с диаметром кроны и оттенком; стиль рисует
+    гладкую круглую крону с мягкой тенью в настоящем размере (как в 2ГИС). Источники:
       - реальные деревья и аллеи из OSM (natural=tree, natural=tree_row) — все;
       - леса, рощи и сады (landuse=forest, natural=wood, landuse=orchard) рядом с
         городами, посёлками и сёлами — не в домах, не на дорогах и не в воде;
-      - с флагом --decor — ещё декоративные ряды вдоль городских улиц и посадки в
-        парках (помечены decor=yes).
+      - парки и скверы городов (leisure=park, garden) — редкими купами, не на
+        дорожках и площадках (помечены decor=yes; --no-parks — без них);
+      - с флагом --decor — ещё ряды вдоль городских улиц (тоже decor=yes).
+  * Модели ориентиров (scripts/landmarks.py): купола и минареты мечетей, трибуны
+    стадионов, покрытия и разметка спортивных площадок.
     Чтобы тайлы оставались лёгкими, в тайле 15-го зума (около 1 км²) не больше
     TILE_BUDGET деревьев: большие леса и сады засаживаются реже, но равномерно.
     Реальные деревья из OSM не выбрасываются.
@@ -56,10 +59,12 @@ from collections import defaultdict
 import osmium
 from osmium.osm.mutable import Node, Way
 
+from landmarks import Landmarks
 from places import StreetIndex, address_names, house_number, merge_overture, ru_street, tidy
 
 COUNTRY = 'TJ'
-DECOR = '--decor' in sys.argv
+DECOR = '--decor' in sys.argv          # ряды деревьев вдоль городских улиц
+PARKS = '--no-parks' not in sys.argv   # посадки в парках и скверах (по умолчанию)
 Z = 15  # зум дополнительных тайлов (tiles/extra.yml)
 NT = 1 << Z
 # Леса и сады засаживаются, если до населённого пункта не дальше стольких метров.
@@ -71,7 +76,7 @@ TILE_BUDGET = 1000  # деревьев на тайл 15-го зума
 FILLS = {
     'wood': (8.0, 0.9, (6.0, 9.0), (10.0, 16.0), 0.38),
     'orchard': (6.0, 0.95, (3.5, 4.5), (3.5, 5.0), 0.07),  # ровные ряды невысоких деревьев
-    'park': (13.0, 0.8, (5.5, 8.5), (8.0, 13.0), 0.25),    # только с --decor
+    'park': (13.0, 0.8, (5.5, 8.5), (8.0, 13.0), 0.25),    # парки и скверы (без --no-parks)
 }
 STREET_CLASSES = {  # полуширина проезжей части, м
     'primary': 9.0, 'secondary': 7.5, 'tertiary': 6.5, 'residential': 4.5,
@@ -297,29 +302,35 @@ def is_label_key(key):
     return key.startswith('name') or '_name' in key or key.startswith('addr:')
 
 
-def write_clipped(src, dst, country, new_buildings=()):
+def write_clipped(src, dst, country, new_buildings=(), overrides=None):
     """Копия выгрузки без подписей соседних стран (см. описание модуля).
 
     Точки за границей теряют все теги (кроме вершин гор у самой границы, например
-    пика Ленина), линии и отношения целиком за границей — названия и адреса."""
+    пика Ленина), линии и отношения целиком за границей — названия и адреса.
+    overrides — новые теги линий и отношений: {('w'|'r', id): теги} (landmarks.py)."""
     reader = osmium.io.Reader(src, osmium.osm.osm_entity_bits.NOTHING)
     header = reader.header()  # в заголовке — рамка выгрузки, по ней Planetiler выбирает тайлы
     reader.close()
     w = osmium.SimpleWriter(dst, overwrite=True, header=header)
     outside_ways = set()
     cleaned = 0
+    overrides = overrides or {}
+
     def fixed(o):
-        """Номер дома в одном виде: «32\\1» → «32/1»; вместо номера — название («Кафе Сахо») → убрать."""
-        value = o.tags.get('addr:housenumber')
-        if value is None:
-            return o
-        number = house_number(value)
-        if number == value:
-            return o
-        tags = {t.k: t.v for t in o.tags if t.k != 'addr:housenumber'}
-        if number:
-            tags['addr:housenumber'] = number
-        return o.replace(tags=tags)
+        """Номер дома в одном виде: «32\\1» → «32/1»; вместо номера — название («Кафе Сахо») → убрать.
+        Плюс новые теги из overrides."""
+        over = None if o.is_node() else overrides.get(('w' if o.is_way() else 'r', o.id))
+        tags = dict(over) if over is not None else None
+        value = (tags if tags is not None else o.tags).get('addr:housenumber')
+        if value is not None:
+            number = house_number(value)
+            if number != value:
+                if tags is None:
+                    tags = {t.k: t.v for t in o.tags}
+                del tags['addr:housenumber']
+                if number:
+                    tags['addr:housenumber'] = number
+        return o if tags is None else o.replace(tags=tags)
 
     # Новые здания дописываются в порядке выгрузки: их точки — после точек OSM, линии — после линий.
     stage = 'nodes'
@@ -403,17 +414,19 @@ class Nature:
         self.country = []     # кольца границы страны (lon, lat)
 
 
-def read_nature(path):
+def read_nature(path, landmarks):
     d = Nature()
     fp = (osmium.FileProcessor(path)
           .with_locations()
-          .with_areas(osmium.filter.KeyFilter('natural', 'landuse', 'leisure', 'waterway', 'boundary'))
+          .with_areas(osmium.filter.KeyFilter('natural', 'landuse', 'leisure', 'waterway', 'boundary', 'amenity',
+                                              'man_made', 'historic'))
           .with_filter(osmium.filter.KeyFilter('place', 'natural', 'landuse', 'leisure', 'waterway',
-                                               'boundary', 'entrance')))
+                                               'boundary', 'entrance', 'amenity', 'man_made', 'historic')))
     for o in fp:
         t = o.tags
         if o.is_node():
             lon, lat = o.location.lon, o.location.lat
+            landmarks.node(o)
             if t.get('place') in ('city', 'town', 'village'):
                 d.places.append((t['place'], *to_xy(lon, lat)))
             if t.get('natural') == 'tree':
@@ -427,6 +440,7 @@ def read_nature(path):
                 except osmium.InvalidLocationError:
                     pass
         elif o.is_area():
+            landmarks.area(o)
             kind = None
             if t.get('landuse') == 'orchard':
                 kind = 'orchard'
@@ -506,7 +520,7 @@ def plan(fills, places, water, real_per_tile):
     per_tile = defaultdict(float)
     for kind, rings in fills:
         spacing, keep = FILLS[kind][:2]
-        if kind == 'park' and not DECOR:
+        if kind == 'park' and not PARKS:
             continue
         radius = DECOR_RADIUS if kind == 'park' else SETTLEMENT_RADIUS
         outer = rings[0]
@@ -658,6 +672,7 @@ class Search:
         self.addresses = []  # (lon, lat, улица, дом, сведения о доме)
         self.stops = []      # (lon, lat, имена, id точки) — остановки с названием
         self.routes = {}     # id точки -> {(вид, номер)} (read_routes)
+        self.dates = {}      # {'osm': 'ГГГГ-ММ-ДД', 'overture': 'ГГГГ-ММ-ДД'} — даты данных
         self.entrances = []  # (lon, lat, номер, квартиры) — подъезды для карточки дома
 
     @staticmethod
@@ -668,7 +683,10 @@ class Search:
         lon, lat = coords[len(coords) // 2]
         x, y = to_xy(lon, lat)
         key = ((t.get('name:ru') or t['name']).lower(), int(x // 3000), int(y // 3000))
-        self.streets[key].append((lon, lat, self.names(t)))
+        names = self.names(t)
+        # Середина и концы участка: по концам видно, что участки — продолжение одной улицы.
+        for p in dict.fromkeys((coords[len(coords) // 2], coords[0], coords[-1])):
+            self.streets[key].append((*p, names))
 
     def write(self, path, country):
         settlements = [p for p in self.places if p[0] in ('city', 'town', 'village') and country.contains(p[1], p[2])]
@@ -752,7 +770,8 @@ class Search:
         with open(path, 'w', encoding='utf-8') as f:
             json.dump({'version': 2, 'fields': ['name', 'name_tg', 'name_en', 'kind', 'category', 'type', 'lon', 'lat',
                                                 'place', 'info'],
-                       'places': cities, 'items': items}, f, ensure_ascii=False, separators=(',', ':'))
+                       'dates': self.dates, 'places': cities, 'items': items}, f, ensure_ascii=False,
+                      separators=(',', ':'))
         return len(items)
 
 
@@ -922,7 +941,7 @@ def read_routes(path):
     return stops
 
 
-def read_obstacles(path, active, entrances, details):
+def read_obstacles(path, active, entrances, details, landmarks):
     """Второй проход: дома и дороги (для посадки деревьев и подъездов) и городские детали."""
     ob = Obstacles()
 
@@ -964,6 +983,9 @@ def read_obstacles(path, active, entrances, details):
                     plain = hw in STREET_CLASSES and t.get('bridge') is None and t.get('tunnel') is None
                     ob.streets.append((hw if plain else '_' + hw, xy, refs))
         elif o.is_area():
+            if 'building' in t:
+                landmarks.building(o)
+            field = t.get('leisure') in ('pitch', 'stadium', 'track')
             for i, outer in enumerate(o.outer_rings()):
                 try:
                     lonlat = [(n.lon, n.lat) for n in outer]
@@ -971,6 +993,12 @@ def read_obstacles(path, active, entrances, details):
                     continue
                 if i == 0:
                     details.area(o, lonlat)
+                if field:  # на полях и стадионах деревья не сажаются
+                    ring = [to_xy(*p) for p in lonlat]
+                    box = bbox([ring])
+                    if in_active(box[0], box[1]) or in_active(box[2], box[3]):
+                        ob.buildings.append((box, ring))
+                        ob.blocks.add_bbox(len(ob.buildings) - 1, box[0] - 6, box[1] - 6, box[2] + 6, box[3] + 6)
                 if 'building' not in t:
                     continue
                 ring = [to_xy(*p) for p in lonlat]
@@ -1127,17 +1155,6 @@ def plant(nature, plans, ob, places, rnd):
 
 # ——— Запись ———
 
-# Ярусы кроны по профилю шара: (доля радиуса, низ, верх в долях высоты).
-# Нижний узкий ярус изображает ствол, дальше — округлая «шапка» кроны.
-TIERS = [(0.16, 0.0, 0.34), (0.72, 0.30, 0.46), (0.95, 0.42, 0.60), (1.0, 0.56, 0.74),
-         (0.86, 0.70, 0.86), (0.52, 0.83, 0.97)]
-SIDES = 12
-TRUNK_SIDES = 6
-UNIT = {n: [(math.cos(a * 2 * math.pi / n), math.sin(a * 2 * math.pi / n)) for a in range(n)]
-        for n in (TRUNK_SIDES, SIDES)}
-NODES_PER_TREE = TRUNK_SIDES + (len(TIERS) - 1) * SIDES
-
-
 def outline(coords, width):
     """Полоса заданной ширины вдоль ломаной (lon, lat) — объёмный забор или стена."""
     xy = [to_xy(*p) for p in coords]
@@ -1161,8 +1178,9 @@ def outline(coords, width):
     return left + right[::-1] + [left[0]]
 
 
-def write(dst, trees, entrances, details, rnd):
-    """Сначала все точки, потом линии: номера точек каждого дерева идут подряд."""
+def write(dst, trees, entrances, details, rnd, landmarks=None):
+    """Сначала все точки, потом линии. Дерево — одна точка с диаметром кроны и оттенком:
+    стиль рисует гладкую круглую крону нужного размера в метрах (как в 2ГИС)."""
     w = osmium.SimpleWriter(dst, overwrite=True)
     nid = 0
 
@@ -1196,32 +1214,21 @@ def write(dst, trees, entrances, details, rnd):
         if len(ring) > 3 and ring[0] == ring[-1]:
             ids = [node(*p) for p in ring[:-1]]
             shapes.append((ids + [ids[0]], {'yoobi': 'parking', **({'name': name} if name else {})}))
-    first = nid = nid + 1
-    shades = bytearray(len(trees))
-    for i, (x, y, crown, _height, _decor) in enumerate(trees):
-        shades[i] = rnd.randrange(3)
-        rot = rnd.uniform(0, math.pi / 4)
-        c, s = math.cos(rot), math.sin(rot)
-        for k, (scale, _lo, _hi) in enumerate(TIERS):
-            r = crown / 2 * scale
-            for ux, uy in UNIT[TRUNK_SIDES if k == 0 else SIDES]:
-                w.add_node(Node(id=nid, location=((x + r * (ux * c - uy * s)) / KX,
-                                                  (y + r * (ux * s + uy * c)) / KY), version=1))
-                nid += 1
+    for x, y, crown, height, decor in trees:
+        node(x / KX, y / KY, {'yoobi': 'tree', 'crown': f'{crown:.1f}', 'height': str(round(height)),
+                              'shade': str(rnd.randrange(3)), **({'decor': 'yes'} if decor else {})})
+    if landmarks:
+        for lon, lat, tags in landmarks.objects:
+            node(lon, lat, tags)
+        for coords, tags in landmarks.lines:
+            shapes.append(([node(*p) for p in coords], tags))
+        for ring, tags in landmarks.models + landmarks.areas:
+            ids = [node(*p) for p in ring]
+            shapes.append((ids + [ids[0]], tags))
     wid = 1
     for ids, tags in shapes:
         w.add_way(Way(id=wid, nodes=ids, tags=tags, version=1))
         wid += 1
-    for i, (_x, _y, _crown, height, decor) in enumerate(trees):
-        nid = first + i * NODES_PER_TREE
-        for k, (_scale, lo, hi) in enumerate(TIERS):
-            n = TRUNK_SIDES if k == 0 else SIDES
-            w.add_way(Way(id=wid, nodes=[*range(nid, nid + n), nid], version=1, tags={
-                'yoobi': 'tree', 'tier': str(k), 'shade': str(shades[i]),
-                'min_height': f'{height * lo:.1f}', 'height': f'{height * hi:.1f}',
-                **({'decor': 'yes'} if decor else {})}))
-            nid += n
-            wid += 1
     w.close()
 
 
@@ -1261,6 +1268,21 @@ def simplify(points, tol):
     return simplify(points[:idx + 1], tol)[:-1] + simplify(points[idx:], tol)
 
 
+def data_dates(src, overture_path=None):
+    """Даты данных для карточек: выгрузка OSM (метка репликации) и релиз Overture Maps."""
+    reader = osmium.io.Reader(src, osmium.osm.osm_entity_bits.NOTHING)
+    header = reader.header()
+    reader.close()
+    stamp = header.get('osmosis_replication_timestamp') or header.get('timestamp') or ''
+    dates = {'osm': stamp[:10]} if stamp else {}
+    try:
+        with open(f'{overture_path}.release', encoding='utf-8') as f:
+            dates['overture'] = f.read().strip()[:10]
+    except (OSError, TypeError):
+        pass
+    return dates
+
+
 def header_latitude(path):
     reader = osmium.io.Reader(path, osmium.osm.osm_entity_bits.NOTHING)
     box = reader.header().box()
@@ -1271,7 +1293,8 @@ def header_latitude(path):
 def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path=None, buildings_path=None):
     set_projection(header_latitude(src))
     rnd = random.Random(7)
-    nature = read_nature(src)
+    landmarks = Landmarks(to_xy, to_lonlat)
+    nature = read_nature(src, landmarks)
     country = Country(nature.country)
     # Леса и сады засаживаются только у своих населённых пунктов, не у соседских.
     own = [p for p in nature.places if country.contains(*to_lonlat(p[1], p[2]))]
@@ -1294,7 +1317,11 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
                         active.add((tx, ty))
     details = Details()
     details.search.routes = read_routes(src)
-    ob = read_obstacles(src, active, nature.entrances, details)
+    details.search.dates = data_dates(src, overture_path)
+    ob = read_obstacles(src, active, nature.entrances, details, landmarks)
+    landmarks.build_stadiums()
+    for box in landmarks.covered:  # ML-контуры трибун не нужны: трибуны строятся сами
+        ob.add_box(box)
     new_buildings = []
     if buildings_path:  # и для основных тайлов, и чтобы деревья не росли в новых домах
         new_buildings, stats = load_new_buildings(buildings_path, country, places, ob, active)
@@ -1305,12 +1332,15 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
         details.businesses, stats = merge_overture(records, details.search.pois, details.search.addresses,
                                                    country.contains, to_xy)
         print(f'Overture: {len(records)} мест, ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
+    landmarks.build_mosques(new_buildings)
+    landmarks.build_monuments()
+    print('ориентиры: ' + ', '.join(f'{k}: {v}' for k, v in landmarks.stats.items()))
     trees = plant(nature, plans, ob, places, rnd)
     # Подъезды не на контуре здания — без направления.
     entrances = ob.entrance_out + [(lon, lat, None, tags) for lon, lat, tags in nature.entrances.values()]
     details.search.entrances = [(lon, lat, tags.get('ref', ''), tags.get('addr:flats', ''))
                                 for lon, lat, _angle, tags in entrances]
-    write(dst, trees, entrances, details, rnd)
+    write(dst, trees, entrances, details, rnd, landmarks)
     write_mask(mask_path, nature.country)
     per_tile = defaultdict(int)
     for x, y, *_ in trees:
@@ -1332,7 +1362,7 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
     if clipped_path:
         if not nature.country:
             print(f'Границы {COUNTRY} в выгрузке нет — подписи соседей не убираются', file=sys.stderr)
-        cleaned = write_clipped(src, clipped_path, country, new_buildings)
+        cleaned = write_clipped(src, clipped_path, country, new_buildings, landmarks.overrides)
         print(f'выгрузка без подписей соседних стран: {clipped_path} (очищено объектов: {cleaned})')
 
 

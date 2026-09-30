@@ -141,6 +141,36 @@ def ru_street(name):
 
 # ——— Улицы: сопоставление addr:street с улицей OSM ———
 
+RU_TYPE_WORDS = {'улица', 'проспект', 'переулок', 'проезд', 'бульвар', 'площадь', 'шоссе', 'тупик', 'набережная',
+                 'микрорайон', 'махалля', 'массив'}
+
+
+def ru_quality(name):
+    """Насколько хорошо русское имя улицы: с типом («улица …»), фамилия в родительном падеже
+    («Гафурова», «Горького», а не «Гафуров», «Горкий»), «дж» на месте таджикской «ҷ» («Джура»,
+    а не «Чура»), без опечаток."""
+    low = (name or '').lower()
+    words = re.findall(r'[а-яё]+', low)
+    body = [w for w in words if w not in RU_TYPE_WORDS]
+    typed = len(body) < len(words)
+    last = body[-1] if body else ''
+    # «Турсунзода», «Хусейнзода» — именительный падеж, хоть и на «-а».
+    declined = len(last) > 3 and last.endswith(('а', 'я', 'ого', 'его')) and not last.endswith(('зода', 'зада'))
+    return (typed, declined, low.count('дж') - low.count('ч') - low.count(','))
+
+
+def ru_name(names, street=''):
+    """Русское имя улицы для адреса: name:ru, а если его нет — из таджикского названия."""
+    return ru_street(names[1]) if names[1] else ru_street(names[0] or street)
+
+
+def street_type(name):
+    """Тип улицы по первому слову русского имени: «улица», «проспект», «переулок»… или ''."""
+    first = (name or '').split(' ', 1)[0].lower()
+    return first if first in ('улица', 'проспект', 'переулок', 'проезд', 'бульвар', 'шоссе', 'тупик',
+                              'площадь', 'набережная') else ''
+
+
 class StreetIndex:
     """Улицы OSM по ключу названия; поиск ближайшей к дому улицы с тем же названием."""
 
@@ -161,10 +191,60 @@ class StreetIndex:
         """Названия (name, name:ru, name:tg, name:en) ближайшей подходящей улицы или None."""
         x, y = self.to_xy(lon, lat)
         key = street_key(street)
-        best = self._nearest(self.exact.get(key, ()), x, y, 3000)
+        items = self.exact.get(key, ())
+        best = self._nearest(items, x, y, 3000)
         if best is None and surname_key(key):
-            best = self._nearest(self.surname.get(surname_key(key), ()), x, y, 800)
-        return best
+            items = self.surname.get(surname_key(key), ())
+            best = self._nearest(items, x, y, 800)
+        if best is None:
+            return None
+        return self._fuller(self._usual(best, items, x, y), x, y)
+
+    @staticmethod
+    def _usual(best, items, x, y, limit=1500):
+        """Одно написание на улицу: участки одной улицы в OSM подписаны по-разному («улица
+        А. Расулова», «улица А.Расулов») — берётся самое частое русское имя у участков той же
+        улицы рядом с домом; при равенстве — ближайшее."""
+        key = street_key(best[0] or best[1])
+        groups = defaultdict(list)
+        for sx, sy, names in items:
+            if street_key(names[0] or names[1]) == key:
+                d = math.hypot(sx - x, sy - y)
+                if d < limit:
+                    groups[ru_name(names)].append((d, names))
+        if len(groups) < 2:
+            return best
+        # Лучшее написание (ru_quality); при равенстве — настоящее русское имя из OSM, а не
+        # переложение таджикского («Турсунзаде», а не «Турсунзода»), затем самое частое и ближайшее.
+        group = max(groups.items(), key=lambda g: (ru_quality(g[0]), any(n[1] for _d, n in g[1]), len(g[1]),
+                                                   -min(g[1])[0]))[1]
+        return min(group, key=lambda item: item[0])[1]
+
+    def _fuller(self, names, x, y, limit=1500):
+        """«улица Гафурова» → «улица Бабаджана Гафурова»: если та же улица рядом названа полностью
+        (имя и фамилия), адрес пишется полным именем, как в 2ГИС и Яндекс Картах."""
+        key = street_key(names[0] or names[1])
+        kind = street_type(ru_name(names))
+        if len(key.split()) != 1 or not surname_key(key) or not kind:
+            return names
+        # Только продолжение той же улицы: участок с полным именем примыкает к ней (ближе 250 м
+        # к её участкам у дома), русское имя того же типа («улица» — не «проспект»), имя и фамилия
+        # без инициалов, скобок и номеров. «Худжанди» в 2 км — другая улица («Муроди Худжанди»).
+        # Из нескольких написаний («Бабаджана», «Бободжона») — самое частое.
+        local = [(px, py) for px, py, _n in self.exact.get(key, ()) if math.hypot(px - x, py - y) < limit]
+        found = defaultdict(list)
+        for sx, sy, other in self.surname.get(key, ()):
+            ru = other[1]
+            words = street_key(other[0] or ru).split()
+            if (not ru or street_type(ru) != kind or re.search(r'[().\d]', ru) or len(words) != 2
+                    or words[-1] != key or len(words[0]) < 3):
+                continue
+            if min((math.hypot(sx - px, sy - py) for px, py in local), default=limit) < 250:
+                found[ru].append((math.hypot(sx - x, sy - y), other))
+        if not found:
+            return names
+        group = max(found.values(), key=lambda g: (len(g), -min(g)[0]))
+        return min(group, key=lambda item: item[0])[1]
 
     @staticmethod
     def _nearest(items, x, y, limit):
@@ -180,7 +260,7 @@ def address_names(street, number, names):
     """(ru, tg, en) — адрес для заголовка карточки на трёх языках."""
     if names:
         name, name_ru, name_tg, name_en = names
-        ru = ru_street(name_ru) if name_ru else ru_street(name or street)
+        ru = ru_name(names, street)
         tg = tidy(name_tg or name or street)
         en = tidy(name_en) if name_en else ''
     else:

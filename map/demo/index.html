@@ -26,11 +26,11 @@
     // Параметры адреса: ?lang=ru|tg|en  ?category=food  ?tiles=pmtiles://https://…/tajikistan.pmtiles
     //                   ?extra=pmtiles://https://…/tajikistan-extra.pmtiles  ?mask=https://…/tajikistan-mask.geojson
     //                   ?search=https://…/tajikistan-search.json  ?theme=dark
-    //                   ?3d=0  ?poi=0  ?trees=0  ?relief=0  ?terrain=1.3
+    //                   ?3d=0  ?poi=0  ?trees=0  ?flat=1  ?relief=0  ?terrain=1.3
     import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs';
     import {
       createStyle, mapOptions, enableLockedCountries, setTheme, loadSearch, enableSearchPanel,
-      POI_LAYERS, describeFeature, SUBCLASS_RU,
+      POI_LAYERS, describeFeature, SUBCLASS_RU, enableObjects3D, supportsObjects3D,
     } from '../src/index.js';
 
     const q = new URLSearchParams(location.search);
@@ -57,6 +57,8 @@
       extraTiles,
       category: q.get('category'),
       trees: q.get('trees') !== '0',
+      // Гладкие объёмные кроны и купола (WebGL2); ?flat=1 — плоские кроны, как в MapLibre Native.
+      trees3d: Boolean(extraTiles) && q.get('flat') !== '1' && q.get('3d') !== '0' && supportsObjects3D(),
       buildings3d: q.get('3d') !== '0',
       poi: q.get('poi') !== '0',
       hillshade: q.get('relief') !== '0',
@@ -69,6 +71,7 @@
       ...mapOptions({ hash: true }),
     });
     map.getContainer().dataset.yoobiTheme = theme;
+    if (styleOptions.trees3d) enableObjects3D(map, { trees: styleOptions.trees });
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), 'top-right');

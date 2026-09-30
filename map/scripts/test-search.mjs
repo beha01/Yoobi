@@ -2,7 +2,7 @@
 // забытая раскладка, адреса с номером дома, рубрики, обратный поиск и здания.
 
 import { createSearch, normalize } from '../src/search.js';
-import { openingStatus, prettyHours } from '../src/ui.js';
+import { openingStatus, prettyHours, floorsFromHeight } from '../src/ui.js';
 
 let failed = 0;
 const check = (name, cond) => {
@@ -68,6 +68,12 @@ check('тип здания в подписи', first('рудаки 10')?.subtitl
 check('приблизительное место ищется', first('кафе у центра')?.approx === true);
 check('приблизительное место не «рядом»', !s.nearby(68.7738, 38.5737, { radius: 30 }).some((r) => r.approx));
 check('английский язык подписи', s.search('dushanbe', { center, lang: 'en' })[0]?.title === 'Dushanbe');
+
+// Этажность по высоте из тайлов: ceil(этажи × 3,66) обратно в этажи; 5 м — неизвестно.
+check('этажность: 4 этажа', floorsFromHeight(Math.ceil(4 * 3.66)) === 4);
+check('этажность: 5, 9, 16 этажей', [5, 9, 16].every((n) => floorsFromHeight(Math.ceil(n * 3.66)) === n));
+check('этажность: 1 этаж', floorsFromHeight(Math.ceil(3.66)) === 1);
+check('этажность неизвестна — не выдумываем', floorsFromHeight(5) === 0 && floorsFromHeight(0) === 0);
 
 // Часы работы — по времени Таджикистана (UTC+5).
 const at = (iso) => ({ now: new Date(iso) });

@@ -2,7 +2,7 @@
 // Размеры — в CSS-пикселях; спрайт собирается в 1x и 2x, в дневной и ночной теме.
 
 import { ICONS, categoryIcons } from '../src/categories.js';
-import { POI_RADIUS } from '../src/style.js';
+import { POI_RADIUS, TREE_CROWN_PX } from '../src/style.js';
 
 // Цвета подложек, колец и узоров: в ночной теме плашки тёмные, а значки остаются цветными.
 const THEME = {
@@ -10,16 +10,17 @@ const THEME = {
     shadow: '#1b2a3a', shadowOpacity: 0.26, plate: '#fff', plateStroke: '#B7AC9D', door: '#7A6652',
     arrowRing: '#6B5B4B', arrowFill: '#3F7FD8', lockStroke: '#D9D3CA', lockGlyph: '#6F6A62',
     dotFill: '#fff', dotRings: ['#2B2B2B', '#3A3A3A', '#4A4A4A'], peak: '#8B6B4A', peakStroke: '#fff',
-    wood: '#86C463', crown: ['#9BD36E', '#6DB34A', '#4C9236'], crown2: ['#8CCB60', '#5EA640', '#3F8430'],
-    crownShadow: '#2f5a22', park: '#4B9A3A', oneway: '#8E98A5', signals: '#2F3338',
+    // Кроны сверху: блик (свет с северо-востока, как у объёмных домов), середина, край.
+    crowns: [['#AEDC86', '#7DBD5A', '#5C9D42'], ['#B8E190', '#89C563', '#68A949'], ['#A2D47C', '#71B050', '#52903A']],
+    crownShadow: '#2f5a22', crownShadowOpacity: 0.3, park: '#4B9A3A', oneway: '#8E98A5', signals: '#2F3338',
     liftPost: '#4E5560', liftStripe: '#E0433F',
   },
   dark: {
     shadow: '#000000', shadowOpacity: 0.45, plate: '#2A303A', plateStroke: '#4A5260', door: '#C9B8A4',
     arrowRing: '#AEB5BF', arrowFill: '#6FA3F0', lockStroke: '#4A5260', lockGlyph: '#C8CDD5',
     dotFill: '#1C2129', dotRings: ['#E6E9ED', '#D0D5DC', '#B8BFC8'], peak: '#C7A57D', peakStroke: '#1C2129',
-    wood: '#1E3D2A', crown: ['#3F7F45', '#2D6634', '#1F4A26'], crown2: ['#397A40', '#285D30', '#1B4322'],
-    crownShadow: '#000000', park: '#2F6B38', oneway: '#8A94A3', signals: '#15181D',
+    crowns: [['#4E8C54', '#35703D', '#244F2C'], ['#559459', '#3A7742', '#27552F'], ['#48854E', '#306937', '#204828']],
+    crownShadow: '#000000', crownShadowOpacity: 0.45, park: '#2F6B38', oneway: '#8A94A3', signals: '#15181D',
     liftPost: '#AEB5BF', liftStripe: '#E0433F',
   },
 };
@@ -29,22 +30,18 @@ const defs = () => `
 <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
   <feDropShadow dx="0" dy="1" stdDeviation="1.3" flood-color="${T.shadow}" flood-opacity="${T.shadowOpacity}"/>
 </filter>
-<filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
-  <feGaussianBlur stdDeviation="0.9"/>
+<filter id="crownBlur" x="-40%" y="-40%" width="180%" height="180%">
+  <feGaussianBlur stdDeviation="2.2"/>
 </filter>
-<filter id="softer" x="-30%" y="-30%" width="160%" height="160%">
-  <feGaussianBlur stdDeviation="1.8"/>
-</filter>
-<radialGradient id="crown" cx="38%" cy="34%" r="70%">
-  <stop offset="0" stop-color="${T.crown[0]}"/>
-  <stop offset="0.55" stop-color="${T.crown[1]}"/>
-  <stop offset="1" stop-color="${T.crown[2]}"/>
+${T.crowns.map(([hi, mid, edge], i) => `<radialGradient id="tc${i}" cx="62%" cy="34%" r="72%">
+  <stop offset="0" stop-color="${hi}"/>
+  <stop offset="0.5" stop-color="${mid}"/>
+  <stop offset="1" stop-color="${edge}"/>
 </radialGradient>
-<radialGradient id="crown2" cx="38%" cy="34%" r="70%">
-  <stop offset="0" stop-color="${T.crown2[0]}"/>
-  <stop offset="0.55" stop-color="${T.crown2[1]}"/>
-  <stop offset="1" stop-color="${T.crown2[2]}"/>
-</radialGradient>`;
+<radialGradient id="tl${i}" cx="60%" cy="36%" r="65%">
+  <stop offset="0" stop-color="${hi}" stop-opacity="0.9"/>
+  <stop offset="1" stop-color="${mid}" stop-opacity="0"/>
+</radialGradient>`).join('')}`;
 
 function glyph(iconName, cx, cy, size) {
   const k = size / 24;
@@ -97,40 +94,23 @@ function lock() {
   };
 }
 
-// Крона дерева с тенью (вид сверху).
-function crown(cx, cy, r, fill = 'crown') {
-  return `<ellipse cx="${cx + r * 0.22}" cy="${cy + r * 0.28}" rx="${r}" ry="${r * 0.92}" fill="${T.crownShadow}" fill-opacity="0.32" filter="url(#${r > 11 ? 'softer' : 'soft'})"/>
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${fill})"/>`;
-}
-
-
-// Бесшовные узоры: кроны у краёв повторяются с другой стороны.
-function seeded(seed) {
-  let s = seed;
-  return () => ((s = (s * 16807) % 2147483647) / 2147483647);
-}
-function treePattern(size, count, rMin, rMax, background, seed) {
-  const rnd = seeded(seed);
-  const trees = [];
-  for (let i = 0; i < count * 30 && trees.length < count; i++) {
-    const t = { x: rnd() * size, y: rnd() * size, r: rMin + rnd() * (rMax - rMin) };
-    const clash = trees.some((o) => {
-      const dx = Math.min(Math.abs(o.x - t.x), size - Math.abs(o.x - t.x));
-      const dy = Math.min(Math.abs(o.y - t.y), size - Math.abs(o.y - t.y));
-      return Math.hypot(dx, dy) < (o.r + t.r) * 0.85;
-    });
-    if (!clash) trees.push(t);
-  }
-  let body = `<rect width="${size}" height="${size}" fill="${background}"/>`;
-  trees.sort((a, b) => a.y - b.y);
-  for (const t of trees) {
-    for (const dx of [-size, 0, size]) {
-      for (const dy of [-size, 0, size]) {
-        body += crown(t.x + dx, t.y + dy, t.r, t.r > (rMin + rMax) / 2 ? 'crown2' : 'crown');
-      }
-    }
-  }
-  return { width: size, height: size, body };
+// Плоская крона дерева (вид сверху), как в 2ГИС: гладкий круг с бликом, мягкие «шапки»
+// листвы и тень на юго-запад. Круг диаметром TREE_CROWN_PX по центру картинки: стиль
+// масштабирует его до настоящего диаметра кроны в метрах.
+function treeCrown(shade) {
+  const size = TREE_CROWN_PX + 12;
+  const c = size / 2;
+  const r = TREE_CROWN_PX / 2;
+  const lobes = [[0.38, -0.3, 0.46], [-0.34, -0.2, 0.42], [0.05, 0.4, 0.44], [0.42, 0.24, 0.36], [-0.3, 0.3, 0.34]]
+    .map(([dx, dy, k]) => `<circle cx="${c + dx * r}" cy="${c + dy * r}" r="${k * r}" fill="url(#tl${shade})" fill-opacity="0.55"/>`)
+    .join('');
+  return {
+    width: size, height: size,
+    body: `<circle cx="${c - r * 0.14}" cy="${c + r * 0.16}" r="${r * 0.98}" fill="${T.crownShadow}" fill-opacity="${T.crownShadowOpacity}" filter="url(#crownBlur)"/>
+      <circle cx="${c}" cy="${c}" r="${r}" fill="url(#tc${shade})"/>
+      ${lobes}
+      <circle cx="${c}" cy="${c}" r="${r - 0.4}" fill="none" stroke="${T.crowns[shade][2]}" stroke-opacity="0.35" stroke-width="0.8"/>`,
+  };
 }
 
 
@@ -203,7 +183,7 @@ export function spriteImages(theme = 'light') {
   images['label-entrance'] = entranceLabel();
   images['entrance-arrow'] = entranceArrow();
   images.lock = lock();
-  images['pattern-wood'] = treePattern(64, 14, 5.5, 8, T.wood, 11);
+  for (const shade of [0, 1, 2]) images[`tree-crown-${shade}`] = treeCrown(shade);
   images['dot-capital'] = dot(5.5, T.dotRings[0], true);
   images['dot-city'] = dot(4, T.dotRings[1], false);
   images['dot-town'] = dot(3, T.dotRings[2], false);

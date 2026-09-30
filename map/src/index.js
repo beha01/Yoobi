@@ -12,6 +12,7 @@
 import { buildStyle, poiFilter, businessFilter, textFieldFor, LANGUAGES, THEMES } from './style.js';
 import { CATEGORY_BY_ID, OTHER, categoryFor } from './categories.js';
 import { TAJIKISTAN_BOUNDS, DUSHANBE_VIEW } from './tajikistan.js';
+import { OBJECTS_3D_LAYER } from './objects3d.js';
 
 export {
   buildStyle, DEFAULTS, COLORS, NIGHT_COLORS, THEMES, LANGUAGES, nameExpression, streetNameExpression,
@@ -25,6 +26,7 @@ export { enableLockedCountries } from './locked.js';
 export { createSearch, loadSearch, normalize } from './search.js';
 export { enableSearchPanel, prettyHours } from './ui.js';
 export { OUTSIDE_MASK, NEIGHBORS } from './borders.js';
+export { enableObjects3D, supportsObjects3D, OBJECTS_3D_LAYER } from './objects3d.js';
 
 // Адрес спрайта рядом с пакетом: <папка пакета>/sprites/yoobi.
 export function defaultSpriteUrl() {
@@ -34,7 +36,8 @@ export function defaultSpriteUrl() {
 /**
  * Готовый объект стиля для `new maplibregl.Map({ style })`.
  * Опции — см. DEFAULTS в style.js: lang, theme ('light' | 'dark'), tiles, extraTiles, glyphs,
- * sprite, dem, hillshade, terrain, buildings3d, trees, locked, clipped, poi, category.
+ * sprite, dem, hillshade, terrain, buildings3d, trees, trees3d, locked, clipped, poi, category.
+ * trees3d: true — кроны и купола рисует объёмный слой: включите его enableObjects3D(map).
  */
 export function createStyle(options = {}) {
   return buildStyle({ sprite: defaultSpriteUrl(), ...options });
@@ -114,6 +117,10 @@ export function setTheme(map, theme, options = {}) {
  * светофоры, лавочки), 'locked' (заморозка соседних стран).
  */
 export function setGroupVisible(map, group, visible) {
+  // Объёмный слой (enableObjects3D): деревья — группа 'trees', купола и минареты — '3d'.
+  const objects = map.getLayer(OBJECTS_3D_LAYER)?.implementation;
+  if (objects && group === 'trees') objects.setTrees(visible);
+  if (objects && group === '3d') objects.setObjects(visible);
   for (const layer of layersWithMeta(map, 'yoobi:group')) {
     if (layer.metadata['yoobi:group'] === group) {
       map.setLayoutProperty(layer.id, 'visibility', visible ? 'visible' : 'none');

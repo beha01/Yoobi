@@ -386,6 +386,8 @@ export function createSearch(data) {
 
   return {
     size: items.length,
+    // Даты данных: { osm: 'ГГГГ-ММ-ДД', overture: 'ГГГГ-ММ-ДД' } — из scripts/extras.py.
+    dates: data.dates || {},
 
     /**
      * Найти по строке. center — [lon, lat] для ранжирования по близости,

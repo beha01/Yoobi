@@ -158,6 +158,16 @@ export function openingStatus(value, { now = new Date(), lang = 'ru', utcOffset 
   return { open: false, text };
 }
 
+/**
+ * Этажность дома по высоте из тайлов. Planetiler пишет render_height = ceil(этажи × 3,66),
+ * если в OSM указаны этажи, иначе — высоту из OSM, а 5 м — если о доме ничего не известно.
+ * Поэтому 4 этажа (15 м) → 4, 5 этажей (19 м) → 5, а 5 м — «неизвестно» (0), без выдумки.
+ */
+export function floorsFromHeight(height) {
+  if (!height || height === 5) return 0;
+  return Math.max(1, Math.round(height / 3.66));
+}
+
 const svg = (d, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
 const I = {
   search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
@@ -515,12 +525,17 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     related = [...entrances, ...inside, ...nearby];
     const coords = `${at[1].toFixed(5)}, ${at[0].toFixed(5)}`;
     const sources = new Set([item, ...inside].map((r) => r.source).filter(Boolean));
+    // «OpenStreetMap, 29.09.2026»: насколько свежие данные.
+    const dated = (name) => {
+      const d = search?.dates?.[name === 'Overture Maps' ? 'overture' : 'osm'];
+      return d ? `${name}, ${d.split('-').reverse().join('.')}` : name;
+    };
     card.innerHTML = `<button type="button" class="yoobi-icon-btn yoobi-x" aria-label="${esc(t.close)}" title="${esc(t.close)}">${svg(I.close)}</button>
       <div class="yoobi-card-head">${dot(item)}<div><h2>${esc(title)}</h2>${alt ? `<div class="yoobi-card-alt">${esc(alt)}</div>` : ''}
       <div class="yoobi-card-type">${esc(type)}</div></div></div>
       ${extra}${section(`${t.entrances} · ${entrances.length}`, entrances)}${section(`${t.inside} · ${inside.length}`, inside)}${section(nearbyTitle, nearby)}
       <div class="yoobi-coords"><span>${coords}</span><button type="button" title="${esc(t.copy)}">${svg(I.copy, 14)}<span>${esc(t.copy)}</span></button></div>
-      ${sources.size ? `<div class="yoobi-source">${esc(t.source)}: ${[...sources].map(esc).join(', ')}</div>` : ''}`;
+      ${sources.size ? `<div class="yoobi-source">${esc(t.source)}: ${[...sources].map((n) => esc(dated(n))).join(' · ')}</div>` : ''}`;
     card.setAttribute('aria-label', title);
     card.classList.remove('yoobi-hidden');
     card.querySelector('.yoobi-x').addEventListener('click', close);
@@ -592,7 +607,7 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
 
   // «Жилой дом · 9 этажей · Душанбе»: этажность из OSM, а если её нет — по высоте дома.
   function houseType(address, height) {
-    const levels = address?.info?.lv || (height ? Math.max(1, Math.round(height / 3.2)) : 0);
+    const levels = address?.info?.lv || floorsFromHeight(height);
     return [address?.type || t.building, levels > 1 ? t.floors(levels) : '', address?.place].filter(Boolean).join(' · ');
   }
 
@@ -678,8 +693,10 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     // Адреса у дома нет — подскажем ближайший, как «рядом с домом 38» в справочниках.
     const nearest = address ? null : search.reverse(lon, lat, { radius: 50, lang });
     const nearby = nearest ? [nearest] : found.places.length ? [] : search.nearby(lon, lat, { radius: 40, lang, limit: 5 });
+    // У мечети высота зала в тайлах оценена по размеру (scripts/landmarks.py) — этажи не выдумываем.
+    const worship = found.places.some((p) => p.category === 'worship');
     show({ item, title: address ? address.title : t.building, alt: address?.alt,
-      type: houseType(address, building.properties.render_height), extra: houseFacts(address),
+      type: houseType(address, worship ? 0 : building.properties.render_height), extra: houseFacts(address),
       entrances: found.entrances, inside: found.places, nearby, nearbyTitle: nearest ? t.nearest : t.nearby,
       at: [lon, lat], marker: false });
     setSelection(building, found.entrances);

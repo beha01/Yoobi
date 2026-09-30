@@ -34,7 +34,10 @@ export const DEFAULTS = {
   hillshade: true,
   terrain: false, // число — объёмный рельеф с этим преувеличением, например 1.3
   buildings3d: true,
-  trees: true, // объёмные деревья (из extraTiles) и текстура лесов
+  trees: true, // деревья из extraTiles: гладкие круглые кроны
+  // Кроны, купола и шары минаретов рисует объёмный слой (objects3d.js, enableObjects3D) —
+  // тогда плоских крон в стиле нет. false — плоские кроны (MapLibre Native, старые браузеры).
+  trees3d: false,
   // «Заморозка» соседних стран: true — встроенный контур, строка — адрес GeoJSON
   // (точный контур из scripts/build-tiles.sh), false — выключить.
   locked: true,
@@ -57,17 +60,17 @@ export const COLORS = {
   residential: '#ECE6DC',
   commercial: '#EFE7DE',
   industrial: '#E7E3DC',
-  park: '#A6D57E',
-  parkFar: '#C3E3A6',
-  grass: '#B5DC90',
-  wood: '#86C463',
+  park: '#BDE1A1',
+  parkFar: '#CEE8B9',
+  grass: '#C8E5AF',
+  wood: '#A9D58B',
   farmland: '#E9ECCB',
   sand: '#F2E9CF',
   rock: '#E4E0D8',
   ice: '#FFFFFF',
-  wetland: '#CFE7C4',
-  pitch: '#B7E09A',
-  cemetery: '#D5E6C5',
+  wetland: '#D0E8CF',
+  pitch: '#B9DFA3',
+  cemetery: '#D6E7CB',
   hospital: '#F6E6E3',
   school: '#F2EBDD',
   water: '#54B8F0',
@@ -103,18 +106,31 @@ export const COLORS = {
   poiLabel: '#2B2B2B',
   landmarkLabel: '#2A2A2A',
   parkLabel: '#3E8A37',
-  orchard: '#C6E0A0',
-  vineyard: '#D7E5AE',
+  orchard: '#D0E6B5',
+  vineyard: '#DDE9C0',
   hillShadow: '#9C8F7A',
   hillHighlight: '#FFFFFF',
   hillAccent: '#C3B9A6',
   railDash: '#FFFFFF',
   buildingShadow: '#5A4E3E',
-  trunk: '#7A5A3C',
-  // Ярусы кроны снизу вверх для трёх оттенков деревьев.
-  crowns: [['#3F8A34', '#4E9E3C', '#5DAE45', '#72BE52', '#8ACD63'],
-    ['#478F38', '#58A641', '#69B64B', '#7EC559', '#98D46C'],
-    ['#43873A', '#53A13F', '#63B249', '#78C156', '#91D068']],
+  // Площадки: газон, полосы стрижки, искусственная трава, корты, грунт, песок, дорожка.
+  pitchGrass: '#9DD181',
+  pitchStripe: '#8FC873',
+  pitchTurf: '#8CCB7A',
+  pitchCourt: '#C5CCD4',
+  pitchHard: '#8EBBD4',
+  pitchInner: '#6FA2C7',
+  pitchClay: '#DC9A72',
+  pitchSand: '#EBDDB0',
+  pitchTrack: '#D98B6F',
+  pitchLine: '#FFFFFF',
+  pitchNet: '#5E6772',
+  // Модели ориентиров: камень минаретов и барабанов, трибуны, козырёк.
+  minaret: '#F2ECE1',
+  pedestal: '#CFC9C0',
+  stand: '#D9DDE2',
+  stand2: '#C7D0DA',
+  canopy: '#F4F6F8',
   houseNumber: '#7B7064',
   houseNumberHalo: '#F7F3EC',
   buildingName: '#6E6357',
@@ -200,10 +216,22 @@ export const NIGHT_COLORS = {
   hillAccent: '#11151B',
   railDash: '#1C2129',
   buildingShadow: '#000000',
-  trunk: '#4A3A2B',
-  crowns: [['#1F4A26', '#25572C', '#2B6432', '#347239', '#3D7F41'],
-    ['#22502A', '#285D30', '#2E6A36', '#37783D', '#418645'],
-    ['#214C28', '#27592E', '#2D6634', '#36743B', '#3F8243']],
+  pitchGrass: '#2A5237',
+  pitchStripe: '#284D34',
+  pitchTurf: '#2A5238',
+  pitchCourt: '#394150',
+  pitchHard: '#2D4A60',
+  pitchInner: '#28435A',
+  pitchClay: '#5A3F33',
+  pitchSand: '#4A4535',
+  pitchTrack: '#5A3B33',
+  pitchLine: '#AEB8C4',
+  pitchNet: '#1C2129',
+  minaret: '#5A6372',
+  pedestal: '#4E5563',
+  stand: '#4B5361',
+  stand2: '#434B58',
+  canopy: '#5F6877',
   houseNumber: '#9AA3AE',
   houseNumberHalo: '#20262F',
   buildingName: '#A6AFBA',
@@ -238,11 +266,12 @@ const FONT = {
 };
 
 const SOURCE = 'openmaptiles';
+// Плоская крона в спрайте — круг диаметром TREE_CROWN_PX (scripts/sprite.mjs). Размер значка
+// на 15 зуме для кроны в 1 м: метров в пикселе на широте Душанбе — 1,8668.
+export const TREE_CROWN_PX = 40;
+const TREE_SIZE_Z15 = 1 / (1.8668 * TREE_CROWN_PX);
 // Область текста в картинке подъезда начинается правее значка двери.
 const ENTRANCE_TEXT_OFFSET = 12;
-
-// Цвет яруса кроны (1–5) из списка оттенков снизу вверх.
-const crownColors = (tiers) => ['match', ['get', 'tier'], 1, tiers[0], 2, tiers[1], 3, tiers[2], 4, tiers[3], tiers[4]];
 
 function landcoverColor(C, park) {
   return ['match', ['get', 'class'],
@@ -608,23 +637,10 @@ export function buildStyle(options = {}) {
       paint: {
         'fill-color': zoomLinear(11, landcoverColor(C, C.parkFar), 15, landcoverColor(C, C.park)),
         'fill-opacity': ['match', ['get', 'class'], 'farmland', 0.75, 'rock', 0.8, 1],
-        'fill-antialias': false,
+        // Сглаженные края вблизи: без «лесенки» на границах парков и газонов.
+        'fill-antialias': ['step', ['zoom'], false, 13, true],
       },
     },
-    ...(o.trees ? [{
-      id: 'landcover-trees',
-      type: 'fill',
-      source: SOURCE,
-      'source-layer': 'landcover',
-      minzoom: 12,
-      filter: ['==', ['get', 'class'], 'wood'],
-      metadata: { 'yoobi:group': 'trees' },
-      paint: {
-        'fill-pattern': 'pattern-wood',
-        'fill-opacity': zoomLinear(12, 0, 13, 0.9),
-        'fill-antialias': false,
-      },
-    }] : []),
     {
       id: 'park',
       type: 'fill',
@@ -632,6 +648,34 @@ export function buildStyle(options = {}) {
       'source-layer': 'park',
       paint: { 'fill-color': C.parkFar, 'fill-opacity': zoomLinear(6, 0.25, 12, 0.4) },
     },
+    ...(extra ? [{
+      id: 'pitch-surface',
+      type: 'fill',
+      source: EXTRA,
+      'source-layer': 'pitch',
+      minzoom: 15,
+      metadata: { 'yoobi:group': 'details' },
+      paint: {
+        'fill-color': ['match', ['get', 'kind'],
+          'grass', C.pitchGrass, 'stripe', C.pitchStripe, 'turf', C.pitchTurf, 'court', C.pitchCourt,
+          'hard', C.pitchHard, 'inner', C.pitchInner, 'clay', C.pitchClay, 'sand', C.pitchSand,
+          'track', C.pitchTrack, C.pitchGrass],
+        'fill-opacity': zoomLinear(15, 0, 15.5, 1),
+      },
+    }, {
+      id: 'pitch-lines',
+      type: 'line',
+      source: EXTRA,
+      'source-layer': 'marking',
+      minzoom: 16,
+      metadata: { 'yoobi:group': 'details' },
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': ['match', ['get', 'kind'], 'net', C.pitchNet, C.pitchLine],
+        'line-width': zoomExp(16, 0.4, 18, 1, 20, 2.6),
+        'line-opacity': zoomLinear(16, 0, 16.5, 0.92),
+      },
+    }] : []),
     ...(hillshade ? [{
       id: 'hillshade',
       type: 'hillshade',
@@ -819,6 +863,27 @@ export function buildStyle(options = {}) {
         'fill-opacity': zoomLinear(13, 0, 13.5, 1),
       },
     },
+    ...(extra && o.trees && !o.trees3d ? [{
+      id: 'trees',
+      type: 'symbol',
+      source: EXTRA,
+      'source-layer': 'tree',
+      minzoom: 15,
+      metadata: { 'yoobi:group': 'trees' },
+      layout: {
+        'icon-image': ['match', ['get', 'shade'], 1, 'tree-crown-1', 2, 'tree-crown-2', 'tree-crown-0'],
+        // Крона в настоящую величину: диаметр в метрах / метров в пикселе / TREE_CROWN_PX.
+        'icon-size': ['interpolate', ['exponential', 2], ['zoom'],
+          15, ['*', ['coalesce', ['get', 'crown'], 7], TREE_SIZE_Z15],
+          20, ['*', ['coalesce', ['get', 'crown'], 7], TREE_SIZE_Z15 * 32]],
+        'icon-pitch-alignment': 'map',
+        'icon-rotation-alignment': 'map',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-padding': 0,
+      },
+      paint: { 'icon-opacity': zoomLinear(15, 0, 15.5, 1) },
+    }] : []),
     ...(o.buildings3d ? [{
       id: 'building-3d',
       type: 'fill-extrusion',
@@ -855,23 +920,21 @@ export function buildStyle(options = {}) {
         'fill-extrusion-vertical-gradient': true,
       },
     }] : []),
-    ...(extra && o.trees ? [{
-      id: 'trees-3d',
+    ...(extra && o.buildings3d ? [{
+      // Модели ориентиров (scripts/landmarks.py): барабаны куполов, минареты, трибуны.
+      id: 'model-3d',
       type: 'fill-extrusion',
       source: EXTRA,
-      'source-layer': 'tree',
+      'source-layer': 'model',
       minzoom: 15,
-      metadata: { 'yoobi:group': 'trees' },
+      metadata: { 'yoobi:group': '3d' },
       paint: {
-        // Ярус 0 — ствол, выше — крона: снизу темнее, к макушке светлее, как на иллюстрации.
-        'fill-extrusion-color': ['match', ['coalesce', ['get', 'tier'], 0],
-          0, C.trunk,
-          ['match', ['coalesce', ['get', 'shade'], 0],
-            ...[1, 2].flatMap((shade) => [shade, crownColors(C.crowns[shade - 1])]),
-            crownColors(C.crowns[2])]],
-        'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
+        'fill-extrusion-color': ['match', ['get', 'kind'],
+          ['stand'], C.stand, ['stand2'], C.stand2, ['canopy'], C.canopy, ['plinth', 'pedestal'], C.pedestal,
+          C.minaret],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 3],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
-        'fill-extrusion-opacity': zoomLinear(15, 0, 15.6, 1),
+        'fill-extrusion-opacity': 1,
         'fill-extrusion-vertical-gradient': true,
       },
     }] : []),
@@ -926,14 +989,14 @@ export function buildStyle(options = {}) {
         'text-field': streetNameExpression(o.lang),
         'text-font': FONT.regular,
         'text-size': zoomLinear(
-          13, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary'], 11, 10],
-          16, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], 14, 13],
-          18, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], 17, 15.5]),
+          13, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary'], 10.5, 9.5],
+          16, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], 12.5, 11.5],
+          18, ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], 14.5, 13.5]),
         'text-letter-spacing': 0.02,
         'text-max-angle': 30,
         'text-padding': 4,
       },
-      paint: { 'text-color': C.roadLabel, 'text-halo-color': C.halo, 'text-halo-width': 2, 'text-halo-blur': 0.3 },
+      paint: { 'text-color': C.roadLabel, 'text-halo-color': C.halo, 'text-halo-width': 1.6, 'text-halo-blur': 0.3 },
     },
     // Номер дома на здании, как в 2ГИС и Яндексе: «46/2», «5а». В чужих тайлах номер
     // бывает записан через обратную черту («32\1») — показываем дробь.
@@ -946,7 +1009,7 @@ export function buildStyle(options = {}) {
       layout: {
         'text-field': houseNumberExpression(),
         'text-font': FONT.regular,
-        'text-size': zoomLinear(16, 10, 17, 11.5, 19, 14),
+        'text-size': zoomLinear(16, 9, 17, 10, 19, 12),
         'text-padding': 2,
         'text-max-width': 6,
       },
@@ -969,7 +1032,7 @@ export function buildStyle(options = {}) {
         layout: {
           'text-field': name,
           'text-font': FONT.regular,
-          'text-size': zoomLinear(16.5, 11, 18, 13),
+          'text-size': zoomLinear(16.5, 10.5, 18, 12),
           'text-max-width': 8,
           'text-padding': 4,
         },
@@ -1041,7 +1104,7 @@ export function buildStyle(options = {}) {
         'symbol-spacing': 420,
         'text-field': riverNameExpression(o.lang),
         'text-font': FONT.italic,
-        'text-size': zoomLinear(11, 11, 14, 13, 17, 15),
+        'text-size': zoomLinear(11, 10.5, 14, 12, 17, 13.5),
         'text-letter-spacing': 0.06,
       },
       paint: { 'text-color': C.waterLabel, 'text-halo-color': C.haloSoft, 'text-halo-width': 1.4 },
@@ -1096,7 +1159,7 @@ export function buildStyle(options = {}) {
       layout: {
         'text-field': name,
         'text-font': FONT.regular,
-        'text-size': zoomLinear(11, 11, 15, 13),
+        'text-size': zoomLinear(11, 10.5, 15, 12),
         'text-transform': 'uppercase',
         'text-letter-spacing': 0.08,
         'text-max-width': 8,
@@ -1371,7 +1434,7 @@ export function businessFilter(kind, category = null) {
 
 // Значок и подпись места: круг значка — в точке места, подпись — рядом с ним.
 // Если подписи не хватает места, остаётся только значок (как в 2ГИС и Яндекс Картах).
-function poiLayout(image, name, { size = 12.5, iconSize = 1, anchors = POI_ANCHORS, sort } = {}) {
+function poiLayout(image, name, { size = 11.5, iconSize = 0.76, anchors = POI_ANCHORS, sort } = {}) {
   return {
     'icon-image': image,
     'icon-size': iconSize,
@@ -1391,7 +1454,7 @@ function poiLayout(image, name, { size = 12.5, iconSize = 1, anchors = POI_ANCHO
 }
 
 function poiPaint(C, color = C.poiLabel) {
-  return { 'text-color': color, 'text-halo-color': C.halo, 'text-halo-width': 1.5, 'text-halo-blur': 0.4 };
+  return { 'text-color': color, 'text-halo-color': C.halo, 'text-halo-width': 1.3, 'text-halo-blur': 0.4 };
 }
 
 // Организации из Overture Maps, которых нет в OSM: кафе, магазины, салоны, офисы.
@@ -1406,11 +1469,11 @@ function businessLayers(o, C) {
     minzoom,
     filter: businessFilter(kind, o.category),
     metadata: { 'yoobi:business': kind, 'yoobi:group': 'poi', 'yoobi:text': 'name' },
-    layout: poiLayout(businessImage('poi'), name, { size: 12, iconSize: 0.92, sort: ['coalesce', ['get', 'rank'], 3] }),
+    layout: poiLayout(businessImage('poi'), name, { size: 10.5, iconSize: 0.62, sort: ['coalesce', ['get', 'rank'], 3] }),
     paint: { ...poiPaint(C), 'text-opacity': zoomLinear(minzoom, 0, minzoom + 0.3, 1),
       'icon-opacity': zoomLinear(minzoom, 0, minzoom + 0.3, 1) },
   });
-  return [layer('business-minor', 'minor', 17.3), layer('business-main', 'main', 16.2)];
+  return [layer('business-minor', 'minor', 17.6), layer('business-main', 'main', 16.6)];
 }
 
 function poiLayers(o, C) {
@@ -1428,11 +1491,11 @@ function poiLayers(o, C) {
       maxzoom: 15,
       filter: poiFilter('icon', o.category),
       metadata: meta('icon', null),
-      layout: { 'icon-image': image, 'icon-size': 0.82, 'icon-padding': 2, 'symbol-sort-key': sort },
+      layout: { 'icon-image': image, 'icon-size': 0.66, 'icon-padding': 2, 'symbol-sort-key': sort },
     },
     {
-      ...base, id: 'poi-minor', minzoom: 17, filter: poiFilter('minor', o.category), metadata: meta('minor'),
-      layout: poiLayout(image, name, { size: 11.5, iconSize: 0.85, sort }), paint: poiPaint(C),
+      ...base, id: 'poi-minor', minzoom: 17.2, filter: poiFilter('minor', o.category), metadata: meta('minor'),
+      layout: poiLayout(image, name, { size: 10.5, iconSize: 0.66, sort }), paint: poiPaint(C),
     },
     {
       ...base, id: 'poi-label', minzoom: 15, filter: poiFilter('main', o.category), metadata: meta('main'),
@@ -1441,7 +1504,7 @@ function poiLayers(o, C) {
     // Знаковые места (вузы, музеи, мечети, госучреждения) — значок крупнее, подпись под ним.
     {
       ...base, id: 'poi-landmark', minzoom: 15, filter: poiFilter('landmark', o.category), metadata: meta('landmark'),
-      layout: poiLayout(image, name, { size: 12.5, iconSize: 1.15, anchors: ['top', 'left', 'right', 'bottom'], sort }),
+      layout: poiLayout(image, name, { size: 12, iconSize: 0.92, anchors: ['top', 'left', 'right', 'bottom'], sort }),
       paint: poiPaint(C, C.landmarkLabel),
     },
     // Парки и сады — зелёной подписью, без значка.
@@ -1454,7 +1517,7 @@ function poiLayers(o, C) {
       layout: {
         'text-field': name,
         'text-font': FONT.italic,
-        'text-size': 12.5,
+        'text-size': 11.5,
         'text-line-height': 1.15,
         'text-max-width': 8,
         'text-padding': 4,
@@ -1471,7 +1534,7 @@ function poiLayers(o, C) {
       filter: poiFilter('airport', o.category),
       metadata: meta('airport'),
       layout: poiLayout(`poi-${AIRPORT.id}-${AIRPORT.icon}`, name, {
-        size: 12.5, iconSize: 1.1, sort: ['match', ['get', 'class'], 'international', 0, 1],
+        size: 12, iconSize: 0.95, sort: ['match', ['get', 'class'], 'international', 0, 1],
       }),
       paint: poiPaint(C),
     },

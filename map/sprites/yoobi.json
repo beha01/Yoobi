@@ -1,322 +1,336 @@
 {
- "pattern-wood": {
+ "tree-crown-0": {
   "x": 0,
   "y": 0,
-  "width": 64,
-  "height": 64,
+  "width": 52,
+  "height": 52,
+  "pixelRatio": 1
+ },
+ "tree-crown-1": {
+  "x": 56,
+  "y": 0,
+  "width": 52,
+  "height": 52,
+  "pixelRatio": 1
+ },
+ "tree-crown-2": {
+  "x": 112,
+  "y": 0,
+  "width": 52,
+  "height": 52,
   "pixelRatio": 1
  },
  "lock": {
-  "x": 68,
+  "x": 168,
   "y": 0,
   "width": 40,
   "height": 40,
   "pixelRatio": 1
  },
  "poi-airport-plane": {
-  "x": 112,
+  "x": 212,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-bank-atm": {
-  "x": 140,
+  "x": 240,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-bank-bank": {
-  "x": 168,
+  "x": 268,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-culture-museum": {
-  "x": 196,
+  "x": 296,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-culture-paw": {
-  "x": 224,
+  "x": 324,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-culture-star": {
-  "x": 252,
+  "x": 352,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-culture-theater": {
-  "x": 280,
+  "x": 380,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-edu-book": {
-  "x": 308,
+  "x": 408,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-edu-school": {
-  "x": 336,
+  "x": 436,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-edu-stroller": {
-  "x": 364,
+  "x": 464,
   "y": 0,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-food-bar": {
-  "x": 392,
-  "y": 0,
+  "x": 0,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-food-burger": {
-  "x": 420,
-  "y": 0,
+  "x": 28,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-food-cafe": {
-  "x": 448,
-  "y": 0,
+  "x": 56,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-food-restaurant": {
-  "x": 476,
-  "y": 0,
+  "x": 84,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-fuel-fuel": {
-  "x": 0,
-  "y": 68,
+  "x": 112,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-gov-landmark": {
-  "x": 28,
-  "y": 68,
+  "x": 140,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-gov-mail": {
-  "x": 56,
-  "y": 68,
+  "x": 168,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-gov-shield": {
-  "x": 84,
-  "y": 68,
+  "x": 196,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-health-hospital": {
-  "x": 112,
-  "y": 68,
+  "x": 224,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-health-paw": {
-  "x": 140,
-  "y": 68,
+  "x": 252,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-hotel-bed": {
-  "x": 168,
-  "y": 68,
+  "x": 280,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-mall-bag": {
-  "x": 196,
-  "y": 68,
+  "x": 308,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-other-briefcase": {
-  "x": 224,
-  "y": 68,
+  "x": 336,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-other-dot": {
-  "x": 252,
-  "y": 68,
+  "x": 364,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-other-dumbbell": {
-  "x": 280,
-  "y": 68,
+  "x": 392,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-other-taxi": {
-  "x": 308,
-  "y": 68,
+  "x": 420,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-other-wrench": {
-  "x": 336,
-  "y": 68,
+  "x": 448,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-pharmacy-plus": {
-  "x": 364,
-  "y": 68,
+  "x": 476,
+  "y": 56,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-shop-basket": {
-  "x": 392,
-  "y": 68,
+  "x": 0,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-shop-book": {
-  "x": 420,
-  "y": 68,
+  "x": 28,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-shop-car": {
-  "x": 448,
-  "y": 68,
+  "x": 56,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-shop-cart": {
-  "x": 476,
-  "y": 68,
+  "x": 84,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-shop-hanger": {
-  "x": 0,
-  "y": 96,
+  "x": 112,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-shop-phone": {
-  "x": 28,
-  "y": 96,
+  "x": 140,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-shop-scissors": {
-  "x": 56,
-  "y": 96,
+  "x": 168,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-shop-sofa": {
-  "x": 84,
-  "y": 96,
+  "x": 196,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-shop-wrench": {
-  "x": 112,
-  "y": 96,
+  "x": 224,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-transport-bus": {
-  "x": 140,
-  "y": 96,
+  "x": 252,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-transport-taxi": {
-  "x": 168,
-  "y": 96,
+  "x": 280,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-transport-train": {
-  "x": 196,
-  "y": 96,
+  "x": 308,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-worship-church": {
-  "x": 224,
-  "y": 96,
+  "x": 336,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "poi-worship-mosque": {
-  "x": 252,
-  "y": 96,
+  "x": 364,
+  "y": 84,
   "width": 24,
   "height": 24,
   "pixelRatio": 1
  },
  "entrance-arrow": {
-  "x": 280,
-  "y": 96,
+  "x": 392,
+  "y": 84,
   "width": 22,
   "height": 22,
   "pixelRatio": 1
  },
  "label-entrance": {
-  "x": 306,
-  "y": 96,
+  "x": 418,
+  "y": 84,
   "width": 34,
   "height": 22,
   "pixelRatio": 1,
@@ -340,92 +354,92 @@
   ]
  },
  "signals": {
-  "x": 344,
-  "y": 96,
+  "x": 456,
+  "y": 84,
   "width": 12,
   "height": 22,
   "pixelRatio": 1
  },
  "parking": {
-  "x": 360,
-  "y": 96,
+  "x": 472,
+  "y": 84,
   "width": 20,
   "height": 20,
   "pixelRatio": 1
  },
  "bench": {
-  "x": 384,
-  "y": 96,
+  "x": 0,
+  "y": 112,
   "width": 18,
   "height": 18,
   "pixelRatio": 1
  },
  "fountain": {
-  "x": 406,
-  "y": 96,
+  "x": 22,
+  "y": 112,
   "width": 18,
   "height": 18,
   "pixelRatio": 1
  },
  "gate": {
-  "x": 428,
-  "y": 96,
+  "x": 44,
+  "y": 112,
   "width": 18,
   "height": 18,
   "pixelRatio": 1
  },
  "toilets": {
-  "x": 450,
-  "y": 96,
+  "x": 66,
+  "y": 112,
   "width": 18,
   "height": 18,
   "pixelRatio": 1
  },
  "water": {
-  "x": 472,
-  "y": 96,
+  "x": 88,
+  "y": 112,
   "width": 18,
   "height": 18,
   "pixelRatio": 1
  },
  "lift-gate": {
-  "x": 0,
-  "y": 124,
+  "x": 110,
+  "y": 112,
   "width": 22,
   "height": 16,
   "pixelRatio": 1
  },
  "dot-capital": {
-  "x": 26,
-  "y": 124,
+  "x": 136,
+  "y": 112,
   "width": 15,
   "height": 15,
   "pixelRatio": 1
  },
  "peak": {
-  "x": 45,
-  "y": 124,
+  "x": 155,
+  "y": 112,
   "width": 14,
   "height": 13,
   "pixelRatio": 1
  },
  "dot-city": {
-  "x": 63,
-  "y": 124,
+  "x": 173,
+  "y": 112,
   "width": 12,
   "height": 12,
   "pixelRatio": 1
  },
  "oneway": {
-  "x": 79,
-  "y": 124,
+  "x": 189,
+  "y": 112,
   "width": 20,
   "height": 12,
   "pixelRatio": 1
  },
  "dot-town": {
-  "x": 103,
-  "y": 124,
+  "x": 213,
+  "y": 112,
   "width": 10,
   "height": 10,
   "pixelRatio": 1

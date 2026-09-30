@@ -331,6 +331,8 @@ def main(out, release=None, bbox=BBOX):
             print(f'  {key.rsplit("/", 1)[1][:10]}: групп строк {len(groups)}/{md.num_row_groups}, '
                   f'скачано {src.fetched / 1e6:.1f} МБ, мест всего {total}')
     print(f'Готово: {out} — {total} мест, скачано {fetched / 1e6:.0f} МБ')
+    with open(f'{out}.release', 'w', encoding='utf-8') as f:
+        f.write(release + '\n')  # extras.py пишет дату релиза в индекс поиска
     return release
 
 
