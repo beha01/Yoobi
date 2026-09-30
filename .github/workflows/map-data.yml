@@ -2,7 +2,7 @@ name: map-data
 # Собирает карту всего Таджикистана из свежей выгрузки OpenStreetMap и сохраняет
 # результат в ветку map-data (файлы больше 95 МБ режутся на части *.partNN).
 # Без сторонних actions: Java 21 и Python уже есть на ubuntu-24.04.
-# Запуск (повтор): при изменении скриптов сборки или вручную (Actions → map-data → Run workflow).
+# Запуск: при изменении скриптов сборки или вручную (Actions → map-data → Run workflow).
 on:
   workflow_dispatch:
   push:
