@@ -14,11 +14,12 @@
 #   model     — барабаны куполов, минареты, трибуны стадионов (kind, height, min_height)
 #   pitch     — покрытия площадок: трава, корт, грунт, дорожка, полосы газона (kind)
 #   marking   — разметка площадок: линии, ворота, сетка (kind)
-#   site      — стройки: участок и точка для подписи (kind = construction, name)
+#   site      — стройки: участок и точка для подписи (kind = construction, name); дома по снимку
+#               Sentinel-2 (kind = imagery, what = tower | levels, date) — карточка пишет «примерно»
 
 schema_name: Yoobi extra
 schema_description: Деревья, подъезды, городские детали и модели ориентиров для стиля Yoobi Map
-attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a> · <a href="https://overturemaps.org" target="_blank">Overture Maps</a>'
+attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a> · <a href="https://overturemaps.org" target="_blank">Overture Maps</a> · <a href="https://dataspace.copernicus.eu" target="_blank">Copernicus Sentinel-2</a>'
 
 sources:
   osm:
@@ -35,6 +36,8 @@ layers:
           yoobi: site
         attributes:
           - key: kind
+          - key: what
+          - key: date
       - source: osm
         geometry: point
         min_zoom: 14

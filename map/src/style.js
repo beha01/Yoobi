@@ -739,6 +739,18 @@ export function buildStyle(options = {}) {
       layout: { 'line-join': 'round' },
       paint: { 'line-color': C.construction, 'line-width': zoomExp(14, 0.7, 18, 2), 'line-dasharray': [3, 2],
         'line-opacity': 0.85 },
+    }, {
+      // Новый дом по спутниковому снимку (scripts/imagery.py): контур примерный — тонкий пунктир вокруг.
+      id: 'imagery-outline',
+      type: 'line',
+      source: EXTRA,
+      'source-layer': 'site',
+      minzoom: 15,
+      filter: ['all', isPolygon, ['==', ['get', 'kind'], 'imagery'], ['==', ['get', 'what'], 'tower']],
+      metadata: { 'yoobi:group': 'details' },
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': C.buildingOutline, 'line-width': zoomExp(15, 0.6, 18, 1.4),
+        'line-dasharray': [2, 2], 'line-opacity': zoomLinear(15, 0, 15.6, 0.7) },
     }] : []),
     ...(extra ? [{
       id: 'pitch-surface',

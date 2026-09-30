@@ -60,7 +60,9 @@ from collections import defaultdict
 import osmium
 from osmium.osm.mutable import Node, Way
 
+import cleanup
 import corrections
+import imagery
 import notes
 import reports
 from landmarks import Landmarks, polylabel
@@ -1031,6 +1033,7 @@ class Obstacles:
         self.entrance_out = []  # (lon, lat, угол, теги)
         self.boxes = defaultdict(list)  # клетка 100 м -> рамки всех домов OSM
         self.tints = {}                 # ('w'|'r', id) -> цвет по назначению (TINTS)
+        self.imagery = []               # (кольцо lon/lat, что, дата) — дома по снимку Sentinel-2 (scripts/imagery.py)
 
     def add_box(self, box):
         """Рамка дома OSM в сетке 100 м — для сверки с новыми зданиями Overture."""
@@ -1146,6 +1149,13 @@ def read_obstacles(path, active, entrances, details, landmarks, sites=None):
                         except (StopIteration, osmium.InvalidLocationError, ZeroDivisionError):
                             pass
                     key = ('w' if o.from_way() else 'r', o.orig_id())
+                    if t.get('yoobi:imagery'):  # контур или этажность по снимку — в карточке «примерно»
+                        what, _, day = t['yoobi:imagery'].partition('|')
+                        try:
+                            ring = [(n.lon, n.lat) for n in next(iter(o.outer_rings()))][:-1]
+                            ob.imagery.append((ring, what, day))
+                        except (StopIteration, osmium.InvalidLocationError):
+                            pass
                     if 'building:colour' not in t and 'building:material' not in t:
                         if own:
                             ob.tints[key] = TINTS[own]
@@ -1344,7 +1354,7 @@ def outline(coords, width):
     return left + right[::-1] + [left[0]]
 
 
-def write(dst, trees, entrances, details, rnd, landmarks=None, construction=()):
+def write(dst, trees, entrances, details, rnd, landmarks=None, construction=(), imagery=()):
     """Сначала все точки, потом линии. Дерево — одна точка с диаметром кроны и оттенком:
     стиль рисует гладкую круглую крону нужного размера в метрах (как в 2ГИС)."""
     w = osmium.SimpleWriter(dst, overwrite=True)
@@ -1383,6 +1393,11 @@ def write(dst, trees, entrances, details, rnd, landmarks=None, construction=()):
             shapes.append((ids + [ids[0]], {'yoobi': 'site', 'kind': 'construction'}))
             x, y, _d = polylabel([[to_xy(*p) for p in ring]])
             node(*to_lonlat(x, y), {'yoobi': 'site_label', 'kind': 'construction', **({'name': name} if name else {})})
+    # Дома по снимку Sentinel-2: контур новой высотки или этажность по тени — примерные.
+    for ring, what, day in imagery:
+        if len(ring) > 2:
+            ids = [node(*p) for p in ring]
+            shapes.append((ids + [ids[0]], {'yoobi': 'site', 'kind': 'imagery', 'what': what, 'date': day}))
     for ring, name in details.parkings:
         if len(ring) > 3 and ring[0] == ring[-1]:
             ids = [node(*p) for p in ring[:-1]]
@@ -1466,18 +1481,26 @@ def header_latitude(path):
 CORRECTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tiles', 'corrections.json')
 NOTES = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'sources', 'osm-notes.json')
 REPORTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'sources', 'reports.json')
+IMAGERY = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'sources', 'imagery.geojson')
 
 
 def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path=None, buildings_path=None,
-         corrections_path=CORRECTIONS, notes_path=NOTES, reports_path=REPORTS, brands_path=None):
-    # Правки до всех проходов, чтобы попали везде: заметки пользователей OSM о закрытых и
-    # новых местах (scripts/notes.py), сообщения курьеров с карты (scripts/reports.py) и
-    # правки владельца (tiles/corrections.json) — при споре важнее последние.
+         corrections_path=CORRECTIONS, notes_path=NOTES, reports_path=REPORTS, brands_path=None, imagery_path=IMAGERY):
+    # Правки до всех проходов, чтобы попали везде: старые дома под новыми (scripts/cleanup.py),
+    # перемены по спутниковым снимкам (scripts/imagery.py), заметки пользователей OSM о закрытых
+    # и новых местах (scripts/notes.py), сообщения курьеров с карты (scripts/reports.py) и правки
+    # владельца (tiles/corrections.json) — при споре важнее последние.
     owner = corrections.load(corrections_path) if corrections_path else None
-    combined = None
+    combined, stats = cleanup.corrections(src)
+    print('старые дома: ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
+    if imagery_path and os.path.exists(imagery_path):
+        seen, stats = imagery.corrections(imagery_path, combined['remove'])
+        print('снимки Sentinel-2: ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
+        combined = notes.merge(seen, combined)
     if notes_path and os.path.exists(notes_path):
-        combined, stats = notes.corrections(src, notes_path)
+        from_notes, stats = notes.corrections(src, notes_path)
         print('заметки OSM: ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
+        combined = notes.merge(from_notes, combined)
     sent = reports.load(reports_path) if reports_path else []
     if sent:
         from_reports, stats = reports.corrections(src, sent)
@@ -1545,7 +1568,7 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
     entrances = ob.entrance_out + [(lon, lat, None, tags) for lon, lat, tags in nature.entrances.values()]
     details.search.entrances = [(lon, lat, tags.get('ref', ''), tags.get('addr:flats', ''))
                                 for lon, lat, _angle, tags in entrances]
-    write(dst, trees, entrances, details, rnd, landmarks, nature.sites.construction())
+    write(dst, trees, entrances, details, rnd, landmarks, nature.sites.construction(), ob.imagery)
     write_mask(mask_path, nature.country)
     per_tile = defaultdict(int)
     for x, y, *_ in trees:
@@ -1578,4 +1601,5 @@ if __name__ == '__main__':
     main(*[a for a in sys.argv[1:] if not a.startswith('--')][:4], search_path=opts.get('search'),
          overture_path=opts.get('overture'), buildings_path=opts.get('buildings'),
          corrections_path=opts.get('corrections', CORRECTIONS), notes_path=opts.get('notes', NOTES),
-         reports_path=opts.get('reports', REPORTS), brands_path=opts.get('brands'))
+         reports_path=opts.get('reports', REPORTS), brands_path=opts.get('brands'),
+         imagery_path=opts.get('imagery', IMAGERY))

@@ -27,6 +27,8 @@ const TEXT = {
     report: 'Сообщить об изменении',
     noEntrances: 'Подъезды у этого дома ещё не отмечены', markEntrance: 'Отметьте вход через «Сообщить об изменении»',
     fromReport: (d) => `По сообщению пользователя карты от ${d} — ещё не проверено`,
+    imageryTower: (d) => `Новый дом по спутниковому снимку Sentinel-2 от ${d}: контур и этажность примерные`,
+    imageryLevels: (d) => `Этажность — по тени на спутниковом снимке Sentinel-2 от ${d}, примерно`,
     onBrandSite: (src, d) => `Есть в списке на сайте сети (${src}), ${d}`,
     notOnBrandSite: (src) => `Нет в списке на сайте сети (${src}) — возможно, закрыто`,
   },
@@ -44,6 +46,8 @@ const TEXT = {
     report: 'Хабар додан дар бораи тағйирот',
     noEntrances: 'Даромадгоҳҳои ин хона ҳанӯз қайд нашудаанд', markEntrance: 'Даромадро тавассути «Хабар додан» қайд кунед',
     fromReport: (d) => `Аз рӯи хабари корбари харита аз ${d} — ҳанӯз санҷида нашудааст`,
+    imageryTower: (d) => `Бинои нав аз рӯи акси моҳвораии Sentinel-2 аз ${d}: шакл ва ошёнаҳо тахминӣ`,
+    imageryLevels: (d) => `Ошёнаҳо аз рӯи соя дар акси моҳвораии Sentinel-2 аз ${d}, тахминӣ`,
     onBrandSite: (src, d) => `Дар рӯйхати сомонаи шабака ҳаст (${src}), ${d}`,
     notOnBrandSite: (src) => `Дар рӯйхати сомонаи шабака нест (${src}) — шояд баста шудааст`,
   },
@@ -61,6 +65,8 @@ const TEXT = {
     report: 'Report a change',
     noEntrances: 'Entrances of this building are not mapped yet', markEntrance: 'Mark the entrance with “Report a change”',
     fromReport: (d) => `Reported by a map user on ${d} — not verified yet`,
+    imageryTower: (d) => `New building from a Sentinel-2 satellite image of ${d}: outline and floors are approximate`,
+    imageryLevels: (d) => `Floors estimated from the shadow on a Sentinel-2 satellite image of ${d}`,
     onBrandSite: (src, d) => `Listed on the chain's website (${src}), ${d}`,
     notOnBrandSite: (src) => `Not listed on the chain's website (${src}) — may be closed`,
   },
@@ -747,6 +753,22 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     if (!card.classList.contains('yoobi-hidden')) close();
   }
 
+  // Контур дома из дополнительных тайлов «по снимку» (слой site, kind=imagery), в котором центр дома.
+  function imageryOf(building) {
+    if (!map.getSource('extra')) return null;
+    const ring = building.geometry.coordinates[0];
+    if (!ring?.length) return null;
+    const c = ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
+    let found = null;
+    try {
+      for (const f of map.querySourceFeatures('extra', { sourceLayer: 'site', filter: ['==', ['get', 'kind'], 'imagery'] })) {
+        const polygons = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates || [];
+        if (polygons.some((p) => inRing(c, p[0]))) { found = f.properties; break; }
+      }
+    } catch { /* источника нет в этом стиле */ }
+    return found;
+  }
+
   // Карточка дома: адрес как в справочниках, тип и этажность, организации внутри.
   function showBuilding(building, [lon, lat]) {
     current = () => showBuilding(building, [lon, lat]);
@@ -763,8 +785,13 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     const flats = (address?.type || '').match(/жил|apart|хона/i) || levels >= 4;
     const missing = !found.entrances.length && !worship && flats && levels >= 3
       ? `<div class="yoobi-note">${esc(t.noEntrances)}${onReport ? `. ${esc(t.markEntrance)}` : ''}</div>` : '';
+    // Дом по снимку Sentinel-2 (scripts/imagery.py): честно сказать, что контур или этажность примерные.
+    const seen = imageryOf(building);
+    const approx = seen ? `<div class="yoobi-note">${esc((seen.what === 'tower' ? t.imageryTower : t.imageryLevels)(
+      String(seen.date || '').split('-').reverse().join('.')))}</div>` : '';
     show({ item, title: address ? address.title : t.building, alt: address?.alt,
-      type: houseType(address, worship ? 0 : building.properties.render_height), extra: houseFacts(address) + missing,
+      type: houseType(address, worship ? 0 : building.properties.render_height),
+      extra: houseFacts(address) + approx + missing,
       entrances: found.entrances, inside: found.places, nearby, nearbyTitle: nearest ? t.nearest : t.nearby,
       at: [lon, lat], marker: false });
     setSelection(building, found.entrances);

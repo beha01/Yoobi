@@ -19,6 +19,8 @@ on:
       - 'map/scripts/notes.py'
       - 'map/scripts/reports.py'
       - 'map/scripts/update-osm.py'
+      - 'map/scripts/imagery.py'
+      - 'map/scripts/cleanup.py'
       - 'map/tiles/**'
       - '.github/workflows/map-data.yml'
 

@@ -138,6 +138,18 @@ if [[ "${BRANDS:-1}" == 1 ]]; then
     echo "Сайты сетей недоступны — филиалы с прошлой сборки" >&2
   fi
 fi
+# Спутниковые снимки Sentinel-2 (scripts/imagery.py): новые высотки, которых ещё нет в OSM,
+# этажность по тени и старые дома, на месте которых стоит новое. Сравниваются последние ясные
+# дни с той же осенью 2017 года; снимки кешируются в data/sources/imagery-cache. Нужен контур
+# страны с прошлого прогона extras.py. IMAGERY=0 — без снимков (берётся прошлый результат).
+if [[ "${IMAGERY:-1}" == 1 && -f "data/$AREA-mask.geojson" ]]; then
+  if ! data/.venv/bin/python -c 'import numpy, scipy, rasterio' 2>/dev/null; then
+    [[ -d data/.venv ]] || python3 -m venv data/.venv
+    data/.venv/bin/pip install --quiet 'osmium>=4' numpy scipy rasterio pillow
+  fi
+  data/.venv/bin/python scripts/imagery.py data/sources/imagery.geojson --osm="$PBF" --mask="data/$AREA-mask.geojson" ||
+    echo "Снимки Sentinel-2 недоступны — перемены по снимкам с прошлой сборки" >&2
+fi
 # Организации Overture Maps: из мировой базы читаются только куски, покрывающие страну
 # (~50 МБ). Если сеть до S3 недоступна, сборка продолжается без них.
 OVERTURE_ARGS=()
