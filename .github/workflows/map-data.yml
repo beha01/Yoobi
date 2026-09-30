@@ -1,0 +1,55 @@
+name: map-data
+
+# Собирает карту всего Таджикистана из свежей выгрузки OpenStreetMap и сохраняет
+# результат в ветку map-data (файлы больше 95 МБ режутся на части *.partNN).
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'map/scripts/build-tiles.sh'
+      - 'map/scripts/extras.py'
+      - 'map/tiles/**'
+      - '.github/workflows/map-data.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: map-data
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: map
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install osmium
+      - name: Сборка тайлов
+        run: PLANETILER_MEMORY=5g ./scripts/build-tiles.sh
+      - name: Сохранить в ветку map-data
+        run: |
+          mkdir -p ../out
+          cp data/sources/tajikistan.osm.pbf data/tajikistan.pmtiles data/tajikistan-extra.pmtiles ../out/
+          cp data/tajikistan-mask.geojson ../out/ 2>/dev/null || true
+          cd ../out
+          for f in *; do
+            if [ "$(stat -c %s "$f")" -gt 95000000 ]; then split -b 90m -d "$f" "$f.part" && rm "$f"; fi
+          done
+          ls -la > MANIFEST.txt
+          git init -q -b map-data
+          git config user.name "map-data bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Map data for Tajikistan: $(date -u +%F)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" map-data
