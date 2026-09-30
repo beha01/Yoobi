@@ -32,13 +32,13 @@ w = osmium.SimpleWriter(src)
 w.add_node(Node(id=1, location=(68.7500, 38.5700), tags={'amenity': 'cafe', 'name': 'Давра'}, version=1, timestamp=OLD))
 w.add_node(Node(id=2, location=(68.7510, 38.5700), tags={'shop': 'gift', 'name': 'Сувениры'}, version=1, timestamp=OLD))
 square = [(68.7520, 38.5700), (68.7524, 38.5700), (68.7524, 38.5703), (68.7520, 38.5703)]
-for i, (x, y) in enumerate(square):
-    w.add_node(Node(id=10 + i, location=(x, y), version=1, timestamp=OLD))
-w.add_way(Way(id=100, nodes=[10, 11, 12, 13, 10], tags={'building': 'yes', 'amenity': 'fuel', 'name': 'Шарк'},
-              version=1, timestamp=OLD))
 house = [(68.7530, 38.5700), (68.7533, 38.5700), (68.7533, 38.5702), (68.7530, 38.5702)]
+for i, (x, y) in enumerate(square):  # как в выгрузке OSM: сначала все точки, потом линии
+    w.add_node(Node(id=10 + i, location=(x, y), version=1, timestamp=OLD))
 for i, (x, y) in enumerate(house):
     w.add_node(Node(id=20 + i, location=(x, y), version=1, timestamp=OLD))
+w.add_way(Way(id=100, nodes=[10, 11, 12, 13, 10], tags={'building': 'yes', 'amenity': 'fuel', 'name': 'Шарк'},
+              version=1, timestamp=OLD))
 w.add_way(Way(id=101, nodes=[20, 21, 22, 23, 20], tags={'building': 'yes'}, version=1, timestamp=OLD))
 w.close()
 
@@ -130,6 +130,31 @@ check('добавлены новые точки и линия', sum(1 for (k, i)
       and any(k == 'w' and i >= corrections.ADD_WAY_BASE for (k, i) in out))
 stamps = [o.timestamp for o in osmium.FileProcessor(dst, osmium.osm.NODE) if o.id == 2]
 check('дата проверки владельцем — время правки', stamps and stamps[0].date() == dt.date(2026, 9, 30))
+
+# ——— Копия выгрузки для основных тайлов: номера по возрастанию и с правками, и с новыми зданиями ———
+import extras  # noqa: E402
+
+
+class Everywhere:
+    def contains(self, lon, lat):
+        return True
+
+    def near_border(self, lon, lat):
+        return False
+
+
+clip_dst = os.path.join(tmp, 'clipped.osm.pbf')
+ring = [(68.7600, 38.5800), (68.7602, 38.5800), (68.7602, 38.5802), (68.7600, 38.5802)]
+extras.write_clipped(dst, clip_dst, Everywhere(), [(ring, 9.0, 3)], tints={('w', 101): '#f3e3b5'})
+order = {'n': [], 'w': [], 'r': []}
+tags = {}
+for o in osmium.FileProcessor(clip_dst):
+    order[o.type_str()].append(o.id)
+    tags[(o.type_str(), o.id)] = dict(o.tags)
+check('номера точек и линий по возрастанию (Planetiler иначе не читает)',
+      all(ids == sorted(ids) for ids in order.values()))
+check('новое здание Overture — в копии', any(i >= extras.ML_WAY_BASE and i < corrections.ADD_WAY_BASE for i in order['w']))
+check('цвет по назначению записан в building:colour', tags[('w', 101)].get('building:colour') == '#f3e3b5')
 
 print('\nПравки в порядке' if not failed else f'\nОшибок: {failed}')
 sys.exit(1 if failed else 0)

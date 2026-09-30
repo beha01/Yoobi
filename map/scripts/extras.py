@@ -370,12 +370,18 @@ def write_clipped(src, dst, country, new_buildings=(), overrides=None, tints=Non
             w.add_way(Way(id=wid, nodes=ids + ids[:1], tags=tags, version=1))
             wid += 1
 
+    # Номера должны идти по возрастанию: новые здания встают перед первым объектом с номером
+    # выше их базы (такие есть у правок — scripts/corrections.py) или в конце своего раздела.
     for o in osmium.FileProcessor(src).with_locations():
-        if stage == 'nodes' and not o.is_node():
+        if stage == 'nodes' and (not o.is_node() or o.id >= ML_NODE_BASE):
             add_new_nodes()
+            stage = 'nodes-done'
+        if stage in ('nodes', 'nodes-done') and not o.is_node():
             stage = 'ways'
-        if stage == 'ways' and o.is_relation():
+        if stage == 'ways' and (o.is_relation() or (o.is_way() and o.id >= ML_WAY_BASE)):
             add_new_ways()
+            stage = 'ways-done'
+        if stage in ('ways', 'ways-done') and o.is_relation():
             stage = 'relations'
         if o.is_node():
             if len(o.tags) == 0:
@@ -410,7 +416,7 @@ def write_clipped(src, dst, country, new_buildings=(), overrides=None, tints=Non
                 w.add_relation(fixed(o))
     if stage == 'nodes':
         add_new_nodes()
-    if stage != 'relations':
+    if stage in ('nodes', 'nodes-done', 'ways'):
         add_new_ways()
     w.close()
     return cleaned
