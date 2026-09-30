@@ -567,10 +567,13 @@ export function buildStyle(options = {}) {
       minzoom: 15,
       metadata: { 'yoobi:group': 'trees' },
       paint: {
-        'fill-extrusion-color': ['match', ['coalesce', ['get', 'shade'], 0],
-          1, ['match', ['coalesce', ['get', 'tier'], 0], 0, '#3E7F32', 1, '#4C9139', 2, '#58A142', 3, '#67B04C', '#7ABF5A'],
-          2, ['match', ['coalesce', ['get', 'tier'], 0], 0, '#45873A', 1, '#559A40', 2, '#62AB48', 3, '#73BA53', '#88C862'],
-          ['match', ['coalesce', ['get', 'tier'], 0], 0, '#417F35', 1, '#50953D', 2, '#5CA545', 3, '#6DB550', '#80C35E']],
+        // Ярус 0 — ствол, выше — крона: снизу темнее, к макушке светлее, как на иллюстрации.
+        'fill-extrusion-color': ['match', ['coalesce', ['get', 'tier'], 0],
+          0, '#7A5A3C',
+          ['match', ['coalesce', ['get', 'shade'], 0],
+            1, ['match', ['get', 'tier'], 1, '#3F8A34', 2, '#4E9E3C', 3, '#5DAE45', 4, '#72BE52', '#8ACD63'],
+            2, ['match', ['get', 'tier'], 1, '#478F38', 2, '#58A641', 3, '#69B64B', 4, '#7EC559', '#98D46C'],
+            ['match', ['get', 'tier'], 1, '#43873A', 2, '#53A13F', 3, '#63B249', 4, '#78C156', '#91D068']]],
         'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
         'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
         'fill-extrusion-opacity': zoomLinear(15, 0, 15.6, 1),

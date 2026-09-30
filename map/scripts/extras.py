@@ -308,8 +308,11 @@ def along(xy, spacing, offset, rnd):
         carry = d - length
 
 
-# Ярусы кроны: (доля радиуса, низ, верх в долях высоты) — ступенчатый «шар».
-TIERS = [(0.55, 0.18, 0.40), (0.92, 0.36, 0.62), (1.0, 0.55, 0.80), (0.68, 0.76, 0.93), (0.32, 0.9, 1.0)]
+# Ярусы кроны по профилю шара: (доля радиуса, низ, верх в долях высоты).
+# Нижний узкий ярус изображает ствол, дальше — округлая «шапка» кроны.
+TIERS = [(0.16, 0.0, 0.34), (0.72, 0.30, 0.46), (0.95, 0.42, 0.60), (1.0, 0.56, 0.74),
+         (0.86, 0.70, 0.86), (0.52, 0.83, 0.97)]
+SIDES = 12
 
 
 def write(dst, trees, entrances, lat0, rnd):
@@ -332,8 +335,9 @@ def write(dst, trees, entrances, lat0, rnd):
         shade = str(rnd.randrange(3))
         rot = rnd.uniform(0, math.pi / 4)
         for k, (scale, lo, hi) in enumerate(TIERS):
-            ids = [node(x + r * scale * math.cos(rot + a * math.pi / 4), y + r * scale * math.sin(rot + a * math.pi / 4))
-                   for a in range(8)]
+            sides = 6 if k == 0 else SIDES
+            ids = [node(x + r * scale * math.cos(rot + a * 2 * math.pi / sides), y + r * scale * math.sin(rot + a * 2 * math.pi / sides))
+                   for a in range(sides)]
             ways.append((ids + [ids[0]], {
                 'yoobi': 'tree', 'tier': str(k), 'shade': shade,
                 'min_height': f'{height * lo:.1f}', 'height': f'{height * hi:.1f}',
