@@ -19,6 +19,8 @@ export {
   CATEGORIES, CATEGORY_BY_ID, OTHER, AIRPORT, SUBCLASS_RU, LANDMARK_CATEGORIES, categoryFor, iconFor,
 } from './categories.js';
 export { TAJIKISTAN_BOUNDS, DUSHANBE_VIEW, COUNTRY_VIEW, CITIES } from './tajikistan.js';
+export { enableLockedCountries } from './locked.js';
+export { OUTSIDE_MASK, NEIGHBORS } from './borders.js';
 
 // Адрес спрайта рядом с пакетом: <папка пакета>/sprites/yoobi.
 export function defaultSpriteUrl() {
@@ -28,7 +30,7 @@ export function defaultSpriteUrl() {
 /**
  * Готовый объект стиля для `new maplibregl.Map({ style })`.
  * Опции — см. DEFAULTS в style.js: lang, tiles, extraTiles, glyphs, sprite, dem,
- * hillshade, terrain, buildings3d, trees, poi, category.
+ * hillshade, terrain, buildings3d, trees, locked, poi, category.
  */
 export function createStyle(options = {}) {
   return buildStyle({ sprite: defaultSpriteUrl(), ...options });
@@ -49,7 +51,9 @@ export function mapOptions(overrides = {}) {
     // На экранах 3x рисуем в 2x: картинка почти та же, а пикселей вдвое меньше.
     pixelRatio: Math.min(dpr, 2),
     fadeDuration: 150,
-    maxTileCacheZoomLevels: 4,
+    // Тайлы соседних масштабов держатся в памяти: приближение и отдаление — мгновенно.
+    maxTileCacheZoomLevels: 6,
+    refreshExpiredTiles: false,
     cancelPendingTileRequestsWhileZooming: true,
     attributionControl: { compact: true },
     ...overrides,
@@ -78,7 +82,7 @@ export function setPoiCategory(map, category = null) {
 
 /**
  * Включить/выключить группу слоёв: '3d' (здания), 'poi' (места), 'hillshade' (рельеф),
- * 'trees' (деревья), 'entrances' (подъезды).
+ * 'trees' (деревья), 'entrances' (подъезды), 'locked' (заморозка соседних стран).
  */
 export function setGroupVisible(map, group, visible) {
   for (const layer of layersWithMeta(map, 'yoobi:group')) {

@@ -22,7 +22,7 @@
     //                   ?extra=pmtiles://https://…/tajikistan-extra.pmtiles  ?3d=0  ?poi=0  ?trees=0
     //                   ?relief=0  ?terrain=1.3
     import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs';
-    import { createStyle, mapOptions, POI_LAYERS, describeFeature, SUBCLASS_RU } from '../src/index.js';
+    import { createStyle, mapOptions, POI_LAYERS, describeFeature, SUBCLASS_RU, enableLockedCountries } from '../src/index.js';
 
     const q = new URLSearchParams(location.search);
     const lang = q.get('lang') || 'ru';
@@ -73,6 +73,9 @@
     });
     map.on('mouseenter', POI_LAYERS, () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', POI_LAYERS, () => { map.getCanvas().style.cursor = ''; });
+
+    // Соседние страны: замок, пульс и сообщение «пока недоступна».
+    map.once('load', () => enableLockedCountries(map, { lang }));
 
     window.map = map;
   </script>

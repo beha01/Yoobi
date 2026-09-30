@@ -1,48 +1,47 @@
 # Дополнительные тайлы для стиля Yoobi Map: то, чего нет в схеме OpenMapTiles.
-# Собирается Planetiler'ом из той же выгрузки OSM (см. scripts/build-tiles.sh).
+# Вход — файл, который готовит scripts/extras.py из выгрузки OSM
+# (см. scripts/build-tiles.sh).
 #
-#   entrance  — подъезды и входы: номер подъезда (ref) и квартиры (flats)
-#   tree      — отдельные деревья (natural=tree)
-#   tree_row  — ряды деревьев вдоль улиц (natural=tree_row)
+#   tree      — ярусы кроны объёмных деревьев (tier, shade, min_height, height, decor)
+#   entrance  — подъезды: номер (ref), квартиры (flats), угол стены (angle)
 
 schema_name: Yoobi extra
-schema_description: Подъезды и деревья из OpenStreetMap для стиля Yoobi Map
+schema_description: Объёмные деревья и подъезды для стиля Yoobi Map
 attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
-
-args:
-  area:
-    description: Регион Geofabrik
-    default: tajikistan
 
 sources:
   osm:
     type: osm
-    url: '${ "geofabrik:" + args.area }'
+    local_path: data/extras.osm.pbf
 
 layers:
+  - id: tree
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 15
+        include_when:
+          yoobi: tree
+        attributes:
+          - key: tier
+            type: integer
+          - key: shade
+            type: integer
+          - key: min_height
+            type: double
+          - key: height
+            type: double
+          - key: decor
   - id: entrance
     features:
       - source: osm
         geometry: point
-        min_zoom: 14
+        min_zoom: 15
         include_when:
-          entrance: __any__
+          yoobi: entrance
         attributes:
           - key: entrance
           - key: ref
           - key: flats
-            tag_value: addr:flats
-  - id: tree
-    features:
-      - source: osm
-        geometry: point
-        min_zoom: 14
-        include_when:
-          natural: tree
-  - id: tree_row
-    features:
-      - source: osm
-        geometry: line
-        min_zoom: 14
-        include_when:
-          natural: tree_row
+          - key: angle
+            type: integer

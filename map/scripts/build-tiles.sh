@@ -2,7 +2,8 @@
 # Собирает карту всего Таджикистана из свежей выгрузки OpenStreetMap:
 #
 #   data/tajikistan.pmtiles        — основные тайлы (схема OpenMapTiles, как у стиля)
-#   data/tajikistan-extra.pmtiles  — подъезды с номерами и квартирами, деревья (tiles/extra.yml)
+#   data/tajikistan-extra.pmtiles  — объёмные деревья и подъезды (scripts/extras.py + tiles/extra.yml)
+#   data/tajikistan-mask.geojson   — точный контур страны для «заморозки» соседей
 #
 # Нужна Java 21+ (planetiler.jar скачается сам) или Docker.
 # Первый запуск скачивает вспомогательные данные (~1 ГБ), дальше — только выгрузку OSM.
@@ -68,11 +69,23 @@ planetiler \
   --output="$DATA/$AREA.pmtiles" \
   --force
 
-# 2. Подъезды и деревья — из той же скачанной выгрузки.
+# 2. Объёмные деревья, подъезды со стороной входа и точная маска страны — из той же
+#    выгрузки (scripts/extras.py, нужен pyosmium; ставится в data/.venv сам).
+PY=python3
+if ! python3 -c 'import osmium' 2>/dev/null; then
+  [[ -d data/.venv ]] || python3 -m venv data/.venv
+  data/.venv/bin/pip install --quiet osmium
+  PY=data/.venv/bin/python
+fi
+rm -f data/extras.osm.pbf
+"$PY" scripts/extras.py "data/sources/$AREA.osm.pbf" data/extras.osm.pbf "data/$AREA-mask.geojson"
+
+# 3. Нарезка дополнительных тайлов (до 15 зума — кроны и подъезды точнее).
 planetiler generate-custom \
   --schema="$TILES/extra.yml" \
-  --osm_path="$DATA/sources/$AREA.osm.pbf" \
+  --osm_path="$DATA/extras.osm.pbf" \
+  --maxzoom=15 \
   --output="$DATA/$AREA-extra.pmtiles" \
   --force
 
-ls -lh "data/$AREA.pmtiles" "data/$AREA-extra.pmtiles"
+ls -lh "data/$AREA.pmtiles" "data/$AREA-extra.pmtiles" "data/$AREA-mask.geojson" 2>/dev/null || true

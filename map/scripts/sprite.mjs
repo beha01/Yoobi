@@ -82,21 +82,37 @@ function parkLabel() {
   };
 }
 
-// Номер подъезда.
+// Подъезд: значок двери слева, номер (и квартиры) справа.
 function entranceLabel() {
+  const k = 12 / 24;
   return {
-    width: 24, height: 20,
-    body: '<rect x="1.5" y="1.5" width="21" height="17" rx="5" fill="#fff" stroke="#8E8579" stroke-width="1"/>',
-    stretchX: [[8, 16]],
-    stretchY: [[9, 11]],
-    content: [6, 4, 18, 16],
+    width: 34, height: 22,
+    body: `<g filter="url(#shadow)"><rect x="1.5" y="1.5" width="31" height="19" rx="6" fill="#fff"/></g>
+      <rect x="1.5" y="1.5" width="31" height="19" rx="6" fill="none" stroke="#B7AC9D" stroke-width="0.8"/>
+      <path fill="#7A6652" transform="translate(4 5) scale(${k})" d="${ICONS.door}"/>`,
+    stretchX: [[18, 27]],
+    stretchY: [[10, 12]],
+    content: [17, 4, 29, 18],
   };
 }
 
-function entranceDot() {
+// Стрелка перед дверью (смотрит «вверх»; стиль поворачивает её к стене дома).
+function entranceArrow() {
   return {
-    width: 12, height: 12,
-    body: '<circle cx="6" cy="6" r="4.2" fill="#fff" stroke="#8E8579" stroke-width="1.4"/>',
+    width: 22, height: 22,
+    body: `<g filter="url(#shadow)"><circle cx="11" cy="11" r="8.5" fill="#fff"/></g>
+      <circle cx="11" cy="11" r="8.5" fill="none" stroke="#6B5B4B" stroke-width="1.2"/>
+      <path d="M11 4.8 15.4 12h-2.8v4.8H9.4V12H6.6z" fill="#3F7FD8"/>`,
+  };
+}
+
+// Замок соседней страны: матовый круг со значком.
+function lock() {
+  return {
+    width: 40, height: 40,
+    body: `<g filter="url(#shadow)"><circle cx="20" cy="20" r="16" fill="#fff" fill-opacity="0.96"/></g>
+      <circle cx="20" cy="20" r="16" fill="none" stroke="#D9D3CA" stroke-width="1"/>
+      <path fill="#6F6A62" transform="translate(10.5 10.5) scale(${19 / 24})" d="${ICONS.lock}"/>`,
   };
 }
 
@@ -106,14 +122,6 @@ function crown(cx, cy, r, fill = 'crown') {
     <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${fill})"/>`;
 }
 
-// Ряд деревьев для line-pattern: высота картинки = ширине линии (диаметру кроны).
-// Между кронами — просветы, размеры и оттенки чуть разные, чтобы ряд не выглядел штампом.
-function treeRow() {
-  return {
-    width: 168, height: 36,
-    body: crown(20, 17, 14.8) + crown(76, 17, 16.4, 'crown2') + crown(132, 17, 14),
-  };
-}
 
 // Бесшовные узоры: кроны у краёв повторяются с другой стороны.
 function seeded(seed) {
@@ -144,10 +152,6 @@ function treePattern(size, count, rMin, rMax, background, seed) {
   return { width: size, height: size, body };
 }
 
-// Одно дерево из OSM (natural=tree). Картинка крупная, чтобы вблизи не мылилась.
-function tree() {
-  return { width: 40, height: 40, body: crown(19, 19, 15) };
-}
 
 function dot(r, ring, center) {
   const s = Math.ceil(r * 2 + 4);
@@ -175,10 +179,8 @@ export function spriteImages() {
   }
   images['label-park'] = parkLabel();
   images['label-entrance'] = entranceLabel();
-  images['entrance-dot'] = entranceDot();
-  images['tree-row'] = treeRow();
-  images.tree = tree();
-  images['pattern-park'] = treePattern(96, 9, 6, 9, '#A6D57E', 7);
+  images['entrance-arrow'] = entranceArrow();
+  images.lock = lock();
   images['pattern-wood'] = treePattern(64, 14, 5.5, 8, '#86C463', 11);
   images['dot-capital'] = dot(5.5, '#2B2B2B', true);
   images['dot-city'] = dot(4, '#3A3A3A', false);

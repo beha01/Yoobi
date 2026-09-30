@@ -9,6 +9,7 @@
 // Стиль использует только возможности, которые поддерживают и MapLibre GL JS,
 // и MapLibre Native (Android/iOS), поэтому один и тот же JSON работает везде.
 
+import { OUTSIDE_MASK, NEIGHBORS } from './borders.js';
 import {
   AIRPORT, HIDDEN_CLASSES, LANDMARK_CATEGORIES, MINOR_SUBCLASSES, categoryExpression, imageExpression,
 } from './categories.js';
@@ -29,7 +30,10 @@ export const DEFAULTS = {
   hillshade: true,
   terrain: false, // число — объёмный рельеф с этим преувеличением, например 1.3
   buildings3d: true,
-  trees: true, // ряды деревьев вдоль улиц и кроны в парках
+  trees: true, // объёмные деревья (из extraTiles) и текстура лесов
+  // «Заморозка» соседних стран: true — встроенный контур, строка — адрес GeoJSON
+  // (точный контур из scripts/build-tiles.sh), false — выключить.
+  locked: true,
   poi: true,
   category: null, // id категории из CATEGORIES, чтобы показывать только её
 };
@@ -96,6 +100,8 @@ const FONT = {
 };
 
 const SOURCE = 'openmaptiles';
+// Область текста в картинке подъезда начинается правее значка двери.
+const ENTRANCE_TEXT_OFFSET = 12;
 
 function landcoverColor(park) {
   const C = COLORS;
@@ -159,6 +165,7 @@ function peakLabelExpression(lang) {
 
 const TEXT_BUILDERS = {
   name: nameExpression, street: streetNameExpression, river: riverNameExpression, peak: peakLabelExpression,
+  neighbor: (lang) => ['get', `name_${lang}`],
 };
 
 // text-field для слоя с пометкой metadata['yoobi:text'] на нужном языке.
@@ -222,7 +229,6 @@ const ROADS = [
     width: { 5: 0.8, 7: 1.2, 9: 2, 10: 2.5, 12: 4, 13: 5.5, 14: 8, 15: 12, 16: 18, 17: 28, 18: 44 } },
 ];
 const SIDEWALK = { 15: 1.5, 16: 3, 17: 5, 18: 8 }; // ширина тротуара с каждой стороны
-const CANOPY = { 15: 5, 16: 12, 17: 20, 18: 32 }; // диаметр кроны дерева вдоль улицы
 const NEAR = [15, 16, 17, 18];
 const widthAt = (road, z) => {
   const zs = Object.keys(road.width).map(Number);
@@ -266,32 +272,6 @@ function sidewalkLayers() {
       'line-color': COLORS.sidewalk,
       'line-width': zoomExp(...NEAR.flatMap((z) => [z, widthAt(r, z) + 2 + SIDEWALK[z] * 2])),
       'line-opacity': zoomLinear(14.5, 0, 15.5, 1),
-    },
-  }));
-}
-
-// Ряды деревьев вдоль улиц: кроны касаются бордюра, стоят на тротуаре и краю квартала.
-function streetTreeLayers() {
-  const classes = ['minor', 'secondary', 'tertiary', 'primary'];
-  const offset = (sign) => zoomExp(...NEAR.flatMap((z) => [z, ['match', ['get', 'class'],
-    ...ROADS.filter((r) => r.classes.some((c) => classes.includes(c)))
-      .flatMap((r) => [r.classes.filter((c) => classes.includes(c)), sign * (widthAt(r, z) / 2 + 1 + CANOPY[z] / 2)]),
-    0]]));
-  return [-1, 1].map((sign) => ({
-    id: `trees-street-${sign < 0 ? 'left' : 'right'}`,
-    type: 'line',
-    source: SOURCE,
-    'source-layer': 'transportation',
-    minzoom: 15,
-    filter: ['all', isLine,
-      ['in', ['get', 'class'], ['literal', classes]],
-      ['!', ['in', ['get', 'brunnel'], ['literal', ['bridge', 'tunnel']]]]],
-    metadata: { 'yoobi:group': 'trees' },
-    paint: {
-      'line-pattern': 'tree-row',
-      'line-width': zoomExp(...NEAR.flatMap((z) => [z, CANOPY[z]])),
-      'line-offset': offset(sign),
-      'line-opacity': zoomLinear(15, 0, 15.8, 1),
     },
   }));
 }
@@ -355,6 +335,10 @@ export function buildStyle(options = {}) {
     maxzoom: 12,
     attribution: '<a href="https://registry.opendata.aws/terrain-tiles/" target="_blank">Рельеф: Terrain Tiles</a>',
   });
+  if (o.locked) {
+    sources.outside = { type: 'geojson', data: typeof o.locked === 'string' ? o.locked : OUTSIDE_MASK, tolerance: 0.6 };
+    sources.neighbors = { type: 'geojson', data: NEIGHBORS };
+  }
   const hillshade = o.dem && o.hillshade;
   if (hillshade) sources.hillshade = demSource();
   if (o.dem && o.terrain) sources.terrain = demSource();
@@ -401,14 +385,12 @@ export function buildStyle(options = {}) {
       type: 'fill',
       source: SOURCE,
       'source-layer': 'landcover',
-      minzoom: 14.5,
-      filter: ['any',
-        ['==', ['get', 'class'], 'wood'],
-        ['all', ['==', ['get', 'class'], 'grass'], ['in', ['get', 'subclass'], ['literal', ['park', 'garden']]]]],
+      minzoom: 12,
+      filter: ['==', ['get', 'class'], 'wood'],
       metadata: { 'yoobi:group': 'trees' },
       paint: {
-        'fill-pattern': ['match', ['get', 'class'], 'wood', 'pattern-wood', 'pattern-park'],
-        'fill-opacity': zoomLinear(14.5, 0, 15.5, 1),
+        'fill-pattern': 'pattern-wood',
+        'fill-opacity': zoomLinear(12, 0, 13, 0.9),
         'fill-antialias': false,
       },
     }] : []),
@@ -487,37 +469,9 @@ export function buildStyle(options = {}) {
       paint: { 'fill-color': C.paving, 'fill-outline-color': C.pavingEdge },
     },
 
-    // ——— Дороги: тоннели, тротуары, деревья, бордюры, асфальт ———
+    // ——— Дороги: тоннели, тротуары, бордюры, асфальт ———
     ...tunnelLayers(),
     ...sidewalkLayers(),
-    ...(o.trees ? streetTreeLayers() : []),
-    ...(extra && o.trees ? [
-      {
-        id: 'trees-osm-row',
-        type: 'line',
-        source: EXTRA,
-        'source-layer': 'tree_row',
-        minzoom: 15,
-        metadata: { 'yoobi:group': 'trees' },
-        paint: { 'line-pattern': 'tree-row', 'line-width': zoomExp(...NEAR.flatMap((z) => [z, CANOPY[z]])) },
-      },
-      {
-        id: 'trees-osm',
-        type: 'symbol',
-        source: EXTRA,
-        'source-layer': 'tree',
-        minzoom: 15,
-        metadata: { 'yoobi:group': 'trees' },
-        layout: {
-          'icon-image': 'tree',
-          'icon-size': zoomExp(15, 0.28, 16, 0.55, 17, 0.95, 18, 1.5),
-          'icon-rotation-alignment': 'map',
-          'icon-pitch-alignment': 'map',
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-        },
-      },
-    ] : []),
     {
       id: 'path-casing',
       type: 'line',
@@ -558,7 +512,22 @@ export function buildStyle(options = {}) {
     },
     ...roadLayers(),
 
-    // ——— Здания ———
+    // ——— Здания и деревья ———
+    // Мягкая тень у основания домов: дома «стоят» на земле, а не парят.
+    {
+      id: 'building-shadow',
+      type: 'line',
+      source: SOURCE,
+      'source-layer': 'building',
+      minzoom: 15,
+      layout: { 'line-join': 'round' },
+      paint: {
+        'line-color': '#5A4E3E',
+        'line-opacity': zoomLinear(15, 0, 16, 0.22),
+        'line-width': zoomExp(15, 2, 17, 6, 18, 10),
+        'line-blur': zoomExp(15, 2, 17, 6, 18, 10),
+      },
+    },
     {
       id: 'building',
       type: 'fill',
@@ -580,11 +549,31 @@ export function buildStyle(options = {}) {
       filter: ['!=', ['get', 'hide_3d'], true],
       metadata: { 'yoobi:group': '3d' },
       paint: {
-        'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 6],
-          0, C.building3d, 60, C.building3dTall],
+        // Цвет фасада из OSM (building:colour), смягчённый к светлой палитре карты.
+        'fill-extrusion-color': ['case',
+          ['has', 'colour'], ['interpolate-lab', ['linear'], 0.55, 0, ['to-color', ['get', 'colour']], 1, C.building3d],
+          ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 6], 0, C.building3d, 60, C.building3dTall]],
         'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
         'fill-extrusion-opacity': 1,
+        'fill-extrusion-vertical-gradient': true,
+      },
+    }] : []),
+    ...(extra && o.trees ? [{
+      id: 'trees-3d',
+      type: 'fill-extrusion',
+      source: EXTRA,
+      'source-layer': 'tree',
+      minzoom: 15,
+      metadata: { 'yoobi:group': 'trees' },
+      paint: {
+        'fill-extrusion-color': ['match', ['coalesce', ['get', 'shade'], 0],
+          1, ['match', ['coalesce', ['get', 'tier'], 0], 0, '#3E7F32', 1, '#4C9139', 2, '#58A142', 3, '#67B04C', '#7ABF5A'],
+          2, ['match', ['coalesce', ['get', 'tier'], 0], 0, '#45873A', 1, '#559A40', 2, '#62AB48', 3, '#73BA53', '#88C862'],
+          ['match', ['coalesce', ['get', 'tier'], 0], 0, '#417F35', 1, '#50953D', 2, '#5CA545', 3, '#6DB550', '#80C35E']],
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': zoomLinear(15, 0, 15.6, 1),
         'fill-extrusion-vertical-gradient': true,
       },
     }] : []),
@@ -695,16 +684,26 @@ export function buildStyle(options = {}) {
       paint: { 'text-color': '#7B7064', 'text-halo-color': '#F7F3EC', 'text-halo-width': 1.4 },
     },
     ...(extra ? [
+      // Стрелка перед дверью показывает, с какой стороны дома вход.
       {
-        id: 'entrance-dot',
+        id: 'entrance-arrow',
         type: 'symbol',
         source: EXTRA,
         'source-layer': 'entrance',
         minzoom: 17,
-        filter: ['!', ['has', 'ref']],
+        filter: ['has', 'angle'],
         metadata: { 'yoobi:group': 'entrances' },
-        layout: { 'icon-image': 'entrance-dot', 'icon-padding': 0 },
+        layout: {
+          'icon-image': 'entrance-arrow',
+          'icon-rotate': ['coalesce', ['get', 'angle'], 0],
+          'icon-rotation-alignment': 'map',
+          'icon-pitch-alignment': 'map',
+          'icon-size': zoomLinear(17, 1.1, 19, 1.8),
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
       },
+      // Значок двери и номер подъезда; с 18 зума — ещё и квартиры.
       {
         id: 'entrance',
         type: 'symbol',
@@ -716,20 +715,21 @@ export function buildStyle(options = {}) {
         layout: {
           'icon-image': 'label-entrance',
           'icon-text-fit': 'both',
-          'icon-text-fit-padding': [0, 1, 0, 1],
-          // С 18 зума под номером подъезда — номера квартир.
+          'icon-text-fit-padding': [0, 2, 0, 1],
           'text-field': ['step', ['zoom'],
             ['to-string', ['get', 'ref']],
             18, ['format',
               ['to-string', ['get', 'ref']], {},
-              ['case', ['has', 'flats'], ['concat', '\n', 'кв. ', ['to-string', ['get', 'flats']]], ''],
-              { 'font-scale': 0.8 }]],
+              ['case', ['has', 'flats'], ['concat', '  кв. ', ['to-string', ['get', 'flats']]], ''],
+              { 'font-scale': 0.85 }]],
           'text-font': FONT.bold,
-          'text-size': 10,
-          'text-line-height': 1.2,
+          'text-size': 11,
+          'text-anchor': 'left',
+          'text-offset': [ENTRANCE_TEXT_OFFSET / 11, -1.6],
           'text-padding': 1,
+          'symbol-sort-key': ['to-number', ['get', 'ref'], 99],
         },
-        paint: { 'text-color': '#4A4238' },
+        paint: { 'text-color': '#3E362D' },
       },
     ] : []),
     {
@@ -829,6 +829,7 @@ export function buildStyle(options = {}) {
       },
       paint: { 'text-color': C.country, 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.6 },
     },
+    ...(o.locked ? lockedLayers(o) : []),
   ];
 
   return {
@@ -841,6 +842,62 @@ export function buildStyle(options = {}) {
     ...(o.dem && o.terrain && { terrain: { source: 'terrain', exaggeration: Number(o.terrain) || 1 } }),
     layers,
   };
+}
+
+// Соседние страны: матовая «заморозка» поверх всего, светящаяся кромка вдоль
+// границы и замок с названием страны. Нажатие обрабатывает enableLockedCountries().
+function lockedLayers(o) {
+  return [
+    {
+      id: 'outside-frost',
+      type: 'fill',
+      source: 'outside',
+      metadata: { 'yoobi:group': 'locked' },
+      paint: { 'fill-color': '#F4F1EC', 'fill-opacity': zoomLinear(4, 0.72, 10, 0.82) },
+    },
+    {
+      id: 'outside-glow',
+      type: 'line',
+      source: 'outside',
+      metadata: { 'yoobi:group': 'locked' },
+      layout: { 'line-join': 'round' },
+      paint: {
+        'line-color': '#FFFFFF',
+        'line-width': zoomExp(4, 6, 8, 14, 14, 28),
+        'line-blur': zoomExp(4, 6, 8, 14, 14, 28),
+        'line-opacity': 0.9,
+      },
+    },
+    {
+      id: 'outside-border',
+      type: 'line',
+      source: 'outside',
+      metadata: { 'yoobi:group': 'locked' },
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': '#8E7BAE', 'line-width': zoomLinear(4, 1.4, 10, 2.6), 'line-opacity': 0.85 },
+    },
+    {
+      id: 'neighbor-lock',
+      type: 'symbol',
+      source: 'neighbors',
+      maxzoom: 11,
+      metadata: { 'yoobi:group': 'locked', 'yoobi:text': 'neighbor' },
+      layout: {
+        'icon-image': 'lock',
+        'icon-size': zoomLinear(4, 0.8, 8, 1.1),
+        'text-field': ['get', `name_${o.lang}`],
+        'text-font': FONT.bold,
+        'text-size': zoomLinear(4, 11, 8, 14),
+        'text-anchor': 'top',
+        'text-offset': [0, 1.5],
+        'text-transform': 'uppercase',
+        'text-letter-spacing': 0.1,
+        'icon-allow-overlap': true,
+        'text-allow-overlap': true,
+      },
+      paint: { 'text-color': '#8A8378', 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.5 },
+    },
+  ];
 }
 
 // Города и посёлки: издалека — точка и подпись сбоку, вблизи — подпись по центру.
