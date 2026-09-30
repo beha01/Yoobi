@@ -1,8 +1,8 @@
 name: map-data
-# Запуск: при изменении скриптов сборки или вручную (Actions → map-data → Run workflow).
-
 # Собирает карту всего Таджикистана из свежей выгрузки OpenStreetMap и сохраняет
 # результат в ветку map-data (файлы больше 95 МБ режутся на части *.partNN).
+# Без сторонних actions: Java 21 и Python уже есть на ubuntu-24.04.
+# Запуск: при изменении скриптов сборки или вручную (Actions → map-data → Run workflow).
 on:
   workflow_dispatch:
   push:
@@ -21,30 +21,27 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    defaults:
-      run:
-        working-directory: map
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: pip install osmium
+      - name: Код
+        run: git clone -q --depth 1 -b "$GITHUB_REF_NAME" "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" repo
       - name: Сборка тайлов
-        run: PLANETILER_MEMORY=5g ./scripts/build-tiles.sh
-      - name: Сохранить в ветку map-data
+        working-directory: repo/map
         run: |
-          mkdir -p ../out
-          cp data/sources/tajikistan.osm.pbf data/tajikistan.pmtiles data/tajikistan-extra.pmtiles ../out/
-          cp data/tajikistan-mask.geojson ../out/ 2>/dev/null || true
-          cd ../out
-          for f in *; do
+          export JAVA_HOME="$JAVA_HOME_21_X64" PATH="$JAVA_HOME_21_X64/bin:$PATH"
+          java -version
+          python3 -m pip install --quiet --break-system-packages osmium || python3 -m pip install --quiet osmium
+          PLANETILER_MEMORY=6g ./scripts/build-tiles.sh
+      - name: Сохранить в ветку map-data
+        working-directory: repo/map
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          cp data/sources/tajikistan.osm.pbf data/tajikistan.pmtiles data/tajikistan-extra.pmtiles "$RUNNER_TEMP/out/"
+          cp data/tajikistan-mask.geojson "$RUNNER_TEMP/out/" 2>/dev/null || true
+          cd "$RUNNER_TEMP/out"
+          sha256sum * > SHA256SUMS.txt
+          for f in *.pbf *.pmtiles; do
             if [ "$(stat -c %s "$f")" -gt 95000000 ]; then split -b 90m -d "$f" "$f.part" && rm "$f"; fi
           done
           ls -la > MANIFEST.txt
