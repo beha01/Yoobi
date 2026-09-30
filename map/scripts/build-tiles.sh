@@ -129,6 +129,15 @@ if [[ "${NOTES:-1}" == 1 ]]; then
     echo "Заметки OSM не скачаны — сборка без них" >&2
   fi
 fi
+# Филиалы сетей с их собственных сайтов (scripts/brands.py): рестораны, банки — адреса, часы и
+# точки, как их публикует сама сеть. BRANDS=0 — без них.
+if [[ "${BRANDS:-1}" == 1 ]]; then
+  if "$PY" scripts/brands.py data/sources/brands.jsonl.tmp; then
+    mv data/sources/brands.jsonl.tmp data/sources/brands.jsonl
+  else
+    echo "Сайты сетей недоступны — филиалы с прошлой сборки" >&2
+  fi
+fi
 # Организации Overture Maps: из мировой базы читаются только куски, покрывающие страну
 # (~50 МБ). Если сеть до S3 недоступна, сборка продолжается без них.
 OVERTURE_ARGS=()
@@ -159,6 +168,7 @@ fetch_buildings() {
 run_extras() {
   local args=(${OVERTURE_ARGS[@]+"${OVERTURE_ARGS[@]}"})
   [[ "${NOTES:-1}" == 1 ]] || args+=(--notes=)
+  [[ "${BRANDS:-1}" == 1 && -f data/sources/brands.jsonl ]] && args+=(--brands=data/sources/brands.jsonl)
   # Сообщения курьеров с карты (src/reports.js), выгруженные из хранилища проекта.
   [[ -n "${REPORTS:-}" ]] && args+=(--reports="$REPORTS")
   [[ "${OVERTURE:-1}" == 1 && -f data/sources/overture-buildings.jsonl ]] && args+=(--buildings=data/sources/overture-buildings.jsonl)

@@ -131,6 +131,24 @@ check('добавлены новые точки и линия', sum(1 for (k, i)
 stamps = [o.timestamp for o in osmium.FileProcessor(dst, osmium.osm.NODE) if o.id == 2]
 check('дата проверки владельцем — время правки', stamps and stamps[0].date() == dt.date(2026, 9, 30))
 
+# ——— Данные из tiles/import/*.geojson ———
+imp = os.path.join(tmp, 'import')
+os.makedirs(imp)
+with open(os.path.join(imp, 'survey.geojson'), 'w', encoding='utf-8') as f:
+    json.dump({'type': 'FeatureCollection', 'features': [
+        {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [68.7, 38.5]},
+         'properties': {'amenity': 'cafe', 'name': 'Съёмка', 'source': 'курьер', 'date': '2026-09-30T10:00:00Z'}},
+        {'type': 'Feature', 'geometry': {'type': 'Polygon', 'coordinates': [[[68.7, 38.5], [68.701, 38.5],
+                                                                              [68.701, 38.501], [68.7, 38.5]]]},
+         'properties': {'building': 'yes', 'building:levels': 9}},
+    ]}, f)
+with open(os.path.join(tmp, 'c.json'), 'w', encoding='utf-8') as f:
+    json.dump({'add': []}, f)
+loaded_import = corrections.load(os.path.join(tmp, 'c.json'))
+check('GeoJSON из tiles/import — точка с датой проверки и контур', len(loaded_import['add']) == 2
+      and loaded_import['add'][0]['tags'].get('check_date') == '2026-09-30'
+      and loaded_import['add'][1]['area'][0] == [68.7, 38.5])
+
 # ——— Копия выгрузки для основных тайлов: номера по возрастанию и с правками, и с новыми зданиями ———
 import extras  # noqa: E402
 
@@ -155,6 +173,24 @@ check('номера точек и линий по возрастанию (Planet
       all(ids == sorted(ids) for ids in order.values()))
 check('новое здание Overture — в копии', any(i >= extras.ML_WAY_BASE and i < corrections.ADD_WAY_BASE for i in order['w']))
 check('цвет по назначению записан в building:colour', tags[('w', 101)].get('building:colour') == '#f3e3b5')
+
+# ——— Стройки: участок без строящихся зданий, где стоят достроенные, — уже не стройка ———
+extras.set_projection(38.58)
+sites = extras.Sites()
+square = lambda x, y, d: [(x, y), (x + d, y), (x + d, y + d), (x, y + d)]  # noqa: E731
+for x0 in (68.70, 68.72, 68.74):
+    sites.add('construction', [extras.to_lonlat(*p) for p in square(*extras.to_xy(x0, 38.57), 100)])
+# (площадь участка 100×100 м = 10 000 м²)
+sites.note(0, 4000, None)                       # достроенный дом на 40% участка
+sites.note(1, 500, None)                        # маленькая пристройка — стройка идёт
+sites.note(2, 4000, None)
+sites.note(2, 0, 'construction')                # есть строящееся здание — участок остаётся (40% < 35%? нет: снят)
+check('участок с достроенным домом на 40% — не стройка', not sites.active(0))
+check('участок с малой пристройкой — всё ещё стройка', sites.active(1))
+check('участок со строящимся зданием и 40% достроенного — уже не стройка', not sites.active(2))
+sites.stats[2] = [2000, 1]
+check('участок со строящимся зданием и 20% достроенного — стройка', sites.active(2))
+check('в подписи остаются только идущие стройки', len(sites.construction()) == 2)
 
 print('\nПравки в порядке' if not failed else f'\nОшибок: {failed}')
 sys.exit(1 if failed else 0)

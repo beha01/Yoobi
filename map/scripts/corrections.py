@@ -17,6 +17,12 @@
     "remove": ["node/123"]
   }
 
+Кроме того, все файлы tiles/import/*.geojson (GeoJSON: точки, линии, контуры с тегами OSM в
+properties, например amenity, name, building, highway, bridge) добавляются как новые объекты —
+сюда кладут данные, которыми можно пользоваться: съёмку курьеров, выгрузку из приложений вроде
+Every Door или OsmAnd, данные, полученные по лицензии (официальный API справочника). В properties
+можно указать source и date — они попадут в карточку («проверено …»).
+
 «change» заменяет и добавляет теги объекта OSM (drop — удалить теги), «remove» убирает
 объект целиком (у линий и отношений — только теги, геометрия нужна соседям), «add»
 добавляет точку, линию или контур с новыми номерами — выше любых в OSM. date — день,
@@ -25,7 +31,9 @@
 """
 
 import datetime as dt
+import glob
 import json
+import os
 
 import osmium
 from osmium.osm.mutable import Node, Way
@@ -53,13 +61,39 @@ def load(path):
     for ref in data.get('remove', []):
         kind, oid = ref.split('/')
         removed.add((KINDS[kind], int(oid)))
-    added = []
+    added = imported(os.path.join(os.path.dirname(os.path.abspath(path)), 'import'))
     for item in data.get('add', []):
         item = dict(item, tags=dict(item.get('tags', {})))
         if item.get('date'):
             item['tags'].setdefault('check_date', item['date'])
         added.append(item)
     return {'change': changes, 'remove': removed, 'add': added}
+
+
+def imported(folder):
+    """Объекты из tiles/import/*.geojson в виде записей «add»."""
+    out = []
+    for name in sorted(glob.glob(os.path.join(folder, '*.geojson'))):
+        with open(name, encoding='utf-8') as f:
+            data = json.load(f)
+        features = data.get('features', [data] if data.get('type') == 'Feature' else [])
+        for ft in features:
+            g, props = ft.get('geometry') or {}, dict(ft.get('properties') or {})
+            tags = {k: str(v) for k, v in props.items() if v not in (None, '') and k not in ('source', 'date')}
+            if props.get('source'):
+                tags['source'] = str(props['source'])
+            if props.get('date'):
+                tags['check_date'] = str(props['date'])[:10]
+            kind, c = g.get('type'), g.get('coordinates')
+            if kind == 'Point':
+                out.append({'lon': c[0], 'lat': c[1], 'tags': tags})
+            elif kind == 'LineString':
+                out.append({'line': [p[:2] for p in c], 'tags': tags})
+            elif kind == 'Polygon':
+                out.append({'area': [p[:2] for p in c[0][:-1]], 'tags': tags})
+            elif kind == 'MultiPolygon':
+                out.extend({'area': [p[:2] for p in poly[0][:-1]], 'tags': tags} for poly in c)
+    return out
 
 
 def apply(src, dst, corr):

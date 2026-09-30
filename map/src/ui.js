@@ -27,6 +27,8 @@ const TEXT = {
     report: 'Сообщить об изменении',
     noEntrances: 'Подъезды у этого дома ещё не отмечены', markEntrance: 'Отметьте вход через «Сообщить об изменении»',
     fromReport: (d) => `По сообщению пользователя карты от ${d} — ещё не проверено`,
+    onBrandSite: (src, d) => `Есть в списке на сайте сети (${src}), ${d}`,
+    notOnBrandSite: (src) => `Нет в списке на сайте сети (${src}) — возможно, закрыто`,
   },
   tg: {
     placeholder: 'Суроға, кӯча, макон', clear: 'Тоза кардан', close: 'Пӯшидан', empty: 'Ҳеҷ чиз ёфт нашуд',
@@ -42,6 +44,8 @@ const TEXT = {
     report: 'Хабар додан дар бораи тағйирот',
     noEntrances: 'Даромадгоҳҳои ин хона ҳанӯз қайд нашудаанд', markEntrance: 'Даромадро тавассути «Хабар додан» қайд кунед',
     fromReport: (d) => `Аз рӯи хабари корбари харита аз ${d} — ҳанӯз санҷида нашудааст`,
+    onBrandSite: (src, d) => `Дар рӯйхати сомонаи шабака ҳаст (${src}), ${d}`,
+    notOnBrandSite: (src) => `Дар рӯйхати сомонаи шабака нест (${src}) — шояд баста шудааст`,
   },
   en: {
     placeholder: 'Address, street, place', clear: 'Clear', close: 'Close', empty: 'Nothing found',
@@ -57,6 +61,8 @@ const TEXT = {
     report: 'Report a change',
     noEntrances: 'Entrances of this building are not mapped yet', markEntrance: 'Mark the entrance with “Report a change”',
     fromReport: (d) => `Reported by a map user on ${d} — not verified yet`,
+    onBrandSite: (src, d) => `Listed on the chain's website (${src}), ${d}`,
+    notOnBrandSite: (src) => `Not listed on the chain's website (${src}) — may be closed`,
   },
 };
 
@@ -542,8 +548,10 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
     if (info.since && Date.now() - Date.parse(info.since) < 3 * 365 * 864e5) {
       out.push(`<li class="yoobi-fresh">${svg(I.clock)}<span>${esc(t.opened(day(info.since)))}</span></li>`);
     }
+    if (info.nb) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.notOnBrandSite(info.nb))}</span></li>`);
+    if (info.bs) out.push(`<li class="yoobi-ok">${svg(I.check)}<span>${esc(t.onBrandSite(info.bs, day(info.bchk || '')))}</span></li>`);
     if (info.chk) out.push(`<li class="yoobi-ok">${svg(I.check)}<span>${esc(t.checked(day(info.chk)))}</span></li>`);
-    else if (info.up && !info.nt && !info.rp) out.push(`<li class="yoobi-fresh">${svg(I.clock)}<span>${esc(t.updated(day(info.up)))}</span></li>`);
+    else if (info.up && !info.nt && !info.rp && !info.bs) out.push(`<li class="yoobi-fresh">${svg(I.clock)}<span>${esc(t.updated(day(info.up)))}</span></li>`);
     const list = out.length ? `<ul class="yoobi-facts">${out.join('')}</ul>` : '';
     const note = item.approx ? `<div class="yoobi-note">${esc(t.approx)}</div>` : '';
     return list + note;
@@ -647,7 +655,7 @@ export function enableSearchPanel(map, source, { lang = 'ru', placeholder, click
       item,
       title: item.title,
       alt: item.alt,
-      type: item.kind === 'poi' ? [item.type, item.place].filter(Boolean).join(' · ')
+      type: item.kind === 'poi' ? [item.type, item.info?.br, item.place].filter(Boolean).join(' · ')
         : item.kind === 'address' ? houseType(item) : item.subtitle,
       extra: item.kind === 'address' ? houseFacts(item) : facts(item),
       nearby,

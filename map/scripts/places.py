@@ -539,3 +539,80 @@ def merge_overture(records, pois, addresses, contains, to_xy):
             rank = 1 if r['confidence'] >= 0.8 else 2 if r['confidence'] >= 0.65 else 3
             fresh.append((lon, lat, names, cat[0], cat[1], rank))
     return fresh, dict(stats)
+
+
+# Вид места по тегам сети: категория поиска и значка (src/categories.js) и тип OSM.
+BRAND_TYPES = {('amenity', 'fast_food'): ('food', 'fast_food'), ('amenity', 'restaurant'): ('food', 'restaurant'),
+               ('amenity', 'cafe'): ('food', 'cafe'), ('amenity', 'bank'): ('bank', 'bank'),
+               ('amenity', 'atm'): ('bank', 'atm'), ('amenity', 'pharmacy'): ('pharmacy', 'pharmacy'),
+               ('amenity', 'fuel'): ('fuel', 'fuel'), ('shop', 'supermarket'): ('shop', 'supermarket'),
+               ('shop', 'mobile_phone'): ('shop', 'mobile_phone')}
+
+
+def brand_type(tags):
+    for (k, v), cat in BRAND_TYPES.items():
+        if tags.get(k) == v:
+            return cat
+    return ('other', 'office')
+
+
+def merge_brands(records, pois, contains, to_xy):
+    """Филиалы сетей с их сайтов (scripts/brands.py) — с местами OSM.
+
+    Место той же сети рядом (120 м) дополняется телефоном, часами и сайтом и получает
+    отметку «есть на сайте сети»; филиала нет в OSM — он добавляется. Места той же сети и
+    того же вида в OSM, которых нет в списке сайта, помечаются «нет в списке на сайте».
+    Возвращает (новые места для тайлов, статистика)."""
+    stats = defaultdict(int)
+    grid = defaultdict(list)
+    for i, (lon, lat, *_rest) in enumerate(pois):
+        x, y = to_xy(lon, lat)
+        grid[(int(x // SAME_RADIUS), int(y // SAME_RADIUS))].append((i, x, y))
+    fresh, matched, kinds = [], set(), {}
+    for r in records:
+        if not contains(r['lon'], r['lat']):
+            continue
+        cat, typ = brand_type(r.get('tags') or {})
+        kinds.setdefault((r['brand'], typ), r['source'])
+        x, y = to_xy(r['lon'], r['lat'])
+        best, best_d = None, SAME_RADIUS
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for i, px, py in grid.get((int(x // SAME_RADIUS) + di, int(y // SAME_RADIUS) + dj), ()):
+                    d = math.hypot(px - x, py - y)
+                    names = [n for n in pois[i][2] if n]
+                    if d < best_d and pois[i][4] == typ and any(same_name(r['brand'], n) or same_name(r['name'], n)
+                                                                 for n in names):
+                        best, best_d = i, d
+        info = {k: v for k, v in (('phone', r.get('phone')), ('hours', r.get('hours')), ('site', r.get('website')))
+                if v}
+        if best is not None and best not in matched:
+            old = pois[best][5]
+            for k, v in info.items():
+                old.setdefault(k, v)
+            old.update(bs=r['source'], bchk=r['fetched'])
+            if r.get('branch'):
+                old.setdefault('br', r['branch'][:80])
+            matched.add(best)
+            stats['дополнено мест OSM'] += 1
+            continue
+        info.update(bs=r['source'], bchk=r['fetched'], src='brand')
+        if r.get('address'):
+            info['addr'] = r['address'][:120]
+        if r.get('branch'):
+            info['br'] = r['branch'][:80]
+        names = (r['name'], '', '', '')
+        pois.append((r['lon'], r['lat'], names, cat, typ, info))
+        fresh.append((r['lon'], r['lat'], names, cat, typ, 1))
+        stats['добавлено филиалов'] += 1
+    # Место сети в OSM без пары в списке сайта: сеть о нём не знает — возможно, закрыто.
+    for i, (lon, lat, names, _cat, typ, info) in enumerate(pois):
+        if i in matched or info.get('src') == 'brand' or not contains(lon, lat):
+            continue
+        for (brand, kind), source in kinds.items():
+            if typ == kind and any(same_name(brand, n) for n in names if n):
+                info['nb'] = source
+                stats['нет в списке сайта'] += 1
+                break
+    return fresh, dict(stats)
+

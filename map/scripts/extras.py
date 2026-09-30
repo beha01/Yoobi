@@ -64,7 +64,7 @@ import corrections
 import notes
 import reports
 from landmarks import Landmarks, polylabel
-from places import StreetIndex, address_names, house_number, merge_overture, ru_street, tidy
+from places import StreetIndex, address_names, house_number, merge_brands, merge_overture, ru_street, tidy
 
 COUNTRY = 'TJ'
 DECOR = '--decor' in sys.argv          # ряды деревьев вдоль городских улиц
@@ -176,8 +176,9 @@ def seg_dist(px, py, ax, ay, bx, by):
 
 
 def signed_area(ring):
-    return sum(ring[i][0] * ring[(i + 1) % len(ring)][1] - ring[(i + 1) % len(ring)][0] * ring[i][1]
-               for i in range(len(ring))) / 2
+    ox, oy = ring[0]  # от первой точки: координаты большие, разность почти равных чисел неточна
+    return sum((ring[i][0] - ox) * (ring[(i + 1) % len(ring)][1] - oy)
+               - (ring[(i + 1) % len(ring)][0] - ox) * (ring[i][1] - oy) for i in range(len(ring))) / 2
 
 
 def num(value, default):
@@ -360,8 +361,8 @@ def write_clipped(src, dst, country, new_buildings=(), overrides=None, tints=Non
             ids = list(range(nid, nid + len(ring)))
             nid += len(ring)
             tags = {'building': 'yes', 'source': 'Overture Maps (ML)'}
-            kind = sites.at(*to_xy(*ring[0])) if sites and sites.items else None
-            if kind:
+            kind = sites.at(*to_xy(*ring[0]))[0] if sites and sites.items else None
+            if kind and kind != 'construction':
                 tags['building:colour'] = TINTS[kind]
             if height:
                 tags['height'] = f'{height:g}'
@@ -477,6 +478,7 @@ class Sites:
     def __init__(self):
         self.items = []  # (вид, кольцо xy, рамка, кольцо lon/lat, название)
         self.grid = Grid(200.0)
+        self.stats = {}  # номер участка -> [площадь достроенных зданий, число строящихся]
 
     def add(self, kind, lonlat, name=''):
         ring = [to_xy(*p) for p in lonlat]
@@ -485,17 +487,42 @@ class Sites:
         self.grid.add_bbox(len(self.items) - 1, *box)
 
     def at(self, x, y):
+        """(вид, номер участка) под точкой или (None, None)."""
         best = None
         for i in self.grid.near(x, y):
             kind, ring, box, _ll, _n = self.items[i]
             if box[0] <= x <= box[2] and box[1] <= y <= box[3] and point_in_ring(x, y, ring):
                 area = (box[2] - box[0]) * (box[3] - box[1])
                 if best is None or area < best[0]:  # вложенные: школа внутри жилого квартала
-                    best = (area, kind)
-        return best[1] if best else None
+                    best = (area, kind, i)
+        return (best[1], best[2]) if best else (None, None)
+
+    def note(self, index, area, building_kind):
+        """Здание внутри участка: достроенные закрывают его площадь, строящиеся — «живая» стройка."""
+        d = self.stats.setdefault(index, [0.0, 0])
+        if building_kind == 'construction':
+            d[1] += 1
+        else:
+            d[0] += area
+
+    def active(self, index):
+        """Идёт ли стройка на самом деле. Участок landuse=construction в OSM нередко остаётся после
+        того, как дома построены и нарисованы: если достроенные здания занимают заметную часть
+        участка, а строящихся нет, это уже не стройка. Со строящимся зданием (building=construction)
+        участок остаётся, пока достроенное не занимает больше трети."""
+        kind, ring, box, _ll, _n = self.items[index]
+        if kind != 'construction':
+            return True
+        done, live = self.stats.get(index, (0.0, 0))
+        area = abs(signed_area([(x - ring[0][0], y - ring[0][1]) for x, y in ring]))
+        if area <= 0:
+            return True
+        share = done / area
+        return share < 0.35 if live else share < 0.12
 
     def construction(self):
-        return [(ll, name) for kind, _r, _b, ll, name in self.items if kind == 'construction']
+        return [(ll, name) for i, (kind, _r, _b, ll, name) in enumerate(self.items)
+                if kind == 'construction' and self.active(i)]
 
 
 class Nature:
@@ -656,6 +683,10 @@ def plan(fills, places, water, real_per_tile):
 def centroid(ring):
     """Центр тяжести кольца (lon, lat); для вырожденных — среднее точек."""
     xy = [to_xy(*p) for p in ring]
+    # Метры от начала проекции — миллионы: считаем от первой точки, иначе вычитание почти равных
+    # чисел сдвигает центр маленького дома на десятки и сотни метров.
+    ox, oy = xy[0]
+    xy = [(x - ox, y - oy) for x, y in xy]
     a = cx = cy = 0.0
     for (x1, y1), (x2, y2) in zip(xy, xy[1:] + xy[:1]):
         f = x1 * y2 - x2 * y1
@@ -664,7 +695,7 @@ def centroid(ring):
         cy += (y1 + y2) * f
     if abs(a) < 1e-6:
         return sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring)
-    return to_lonlat(cx / (3 * a), cy / (3 * a))
+    return to_lonlat(ox + cx / (3 * a), oy + cy / (3 * a))
 
 
 def poi_category(t):
@@ -1102,16 +1133,24 @@ def read_obstacles(path, active, entrances, details, landmarks, sites=None):
         elif o.is_area():
             if 'building' in t:
                 landmarks.building(o)
-                if 'building:colour' not in t and 'building:material' not in t and t.get('building') != 'no':
-                    kind = building_function(t)
-                    if not kind and sites and sites.items:
+                if t.get('building') != 'no':
+                    own = building_function(t)
+                    site, index = None, None
+                    if sites and sites.items:
                         try:
-                            ring = next(iter(o.outer_rings()))
-                            kind = sites.at(*to_xy(*centroid([(n.lon, n.lat) for n in ring][:-1])))
+                            ring = [(n.lon, n.lat) for n in next(iter(o.outer_rings()))][:-1]
+                            xy = [to_xy(*p) for p in ring]
+                            site, index = sites.at(*to_xy(*centroid(ring)))
+                            if index is not None:
+                                sites.note(index, abs(signed_area(xy)), own)
                         except (StopIteration, osmium.InvalidLocationError, ZeroDivisionError):
-                            kind = None
-                    if kind:
-                        ob.tints[('w' if o.from_way() else 'r', o.orig_id())] = TINTS[kind]
+                            pass
+                    key = ('w' if o.from_way() else 'r', o.orig_id())
+                    if 'building:colour' not in t and 'building:material' not in t:
+                        if own:
+                            ob.tints[key] = TINTS[own]
+                        elif site and site != 'construction':  # в стройке достроенные дома цвет не меняют
+                            ob.tints[key] = TINTS[site]
             field = t.get('leisure') in ('pitch', 'stadium', 'track')
             for i, outer in enumerate(o.outer_rings()):
                 try:
@@ -1430,7 +1469,7 @@ REPORTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data',
 
 
 def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path=None, buildings_path=None,
-         corrections_path=CORRECTIONS, notes_path=NOTES, reports_path=REPORTS):
+         corrections_path=CORRECTIONS, notes_path=NOTES, reports_path=REPORTS, brands_path=None):
     # Правки до всех проходов, чтобы попали везде: заметки пользователей OSM о закрытых и
     # новых местах (scripts/notes.py), сообщения курьеров с карты (scripts/reports.py) и
     # правки владельца (tiles/corrections.json) — при споре важнее последние.
@@ -1490,6 +1529,13 @@ def main(src, dst, mask_path, clipped_path=None, search_path=None, overture_path
         details.businesses, stats = merge_overture(records, details.search.pois, details.search.addresses,
                                                    country.contains, to_xy)
         print(f'Overture: {len(records)} мест, ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
+    if brands_path and os.path.exists(brands_path):
+        # Филиалы сетей с их сайтов (scripts/brands.py): после Overture — их сведения свежее.
+        with open(brands_path, encoding='utf-8') as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        fresh, stats = merge_brands(records, details.search.pois, country.contains, to_xy)
+        details.businesses = list(details.businesses) + fresh
+        print(f'сети: {len(records)} филиалов, ' + ', '.join(f'{k}: {v}' for k, v in stats.items()))
     landmarks.build_mosques(new_buildings)
     landmarks.build_monuments()
     landmarks.build_special()
@@ -1532,4 +1578,4 @@ if __name__ == '__main__':
     main(*[a for a in sys.argv[1:] if not a.startswith('--')][:4], search_path=opts.get('search'),
          overture_path=opts.get('overture'), buildings_path=opts.get('buildings'),
          corrections_path=opts.get('corrections', CORRECTIONS), notes_path=opts.get('notes', NOTES),
-         reports_path=opts.get('reports', REPORTS))
+         reports_path=opts.get('reports', REPORTS), brands_path=opts.get('brands'))

@@ -33,19 +33,24 @@ SQ2 = math.sqrt(2)
 
 
 def ring_area(ring):
-    return abs(sum(ax * by - bx * ay for (ax, ay), (bx, by) in zip(ring, ring[1:] + ring[:1]))) / 2
+    ox, oy = ring[0]  # от первой точки: см. centroid
+    return abs(sum((ax - ox) * (by - oy) - (bx - ox) * (ay - oy)
+                   for (ax, ay), (bx, by) in zip(ring, ring[1:] + ring[:1]))) / 2
 
 
 def centroid(ring):
+    # От первой точки: координаты в метрах — миллионы, и без сдвига центр маленького контура уплывает.
+    ox, oy = ring[0]
     a = cx = cy = 0.0
     for (ax, ay), (bx, by) in zip(ring, ring[1:] + ring[:1]):
+        ax, ay, bx, by = ax - ox, ay - oy, bx - ox, by - oy
         f = ax * by - bx * ay
         a += f
         cx += (ax + bx) * f
         cy += (ay + by) * f
     if abs(a) < 1e-9:
         return sum(x for x, _ in ring) / len(ring), sum(y for _, y in ring) / len(ring)
-    return cx / (3 * a), cy / (3 * a)
+    return ox + cx / (3 * a), oy + cy / (3 * a)
 
 
 def inside(x, y, rings):

@@ -172,6 +172,10 @@ export const COLORS = {
   lockLabel: '#8A8378',
   light: '#FFFFFF',
   lightIntensity: 0.35,
+  // Небо и дымка у горизонта при наклоне карты: город уходит в мягкий туман, а не обрывается.
+  sky: '#CFE2F4',
+  skyHorizon: '#F3EFE7',
+  fog: '#EEE9E0',
 };
 
 // Ночная тема: тёмная холодная земля, приглушённые дороги и светлые подписи.
@@ -289,6 +293,9 @@ export const NIGHT_COLORS = {
   lockLabel: '#A8AFB9',
   light: '#C8D2E0',
   lightIntensity: 0.25,
+  sky: '#0C121B',
+  skyHorizon: '#1C2129',
+  fog: '#1C2129',
 };
 
 export const THEMES = ['light', 'dark'];
@@ -1382,6 +1389,8 @@ export function buildStyle(options = {}) {
     sprite: o.theme === 'dark' ? `${o.sprite}-dark` : o.sprite,
     glyphs: o.glyphs,
     light: { anchor: 'viewport', color: C.light, intensity: C.lightIntensity, position: [1.3, 210, 38] },
+    sky: { 'sky-color': C.sky, 'horizon-color': C.skyHorizon, 'fog-color': C.fog, 'fog-ground-blend': 0.3,
+      'horizon-fog-blend': 0.6, 'sky-horizon-blend': 0.7 },
     ...(o.dem && o.terrain && { terrain: { source: 'terrain', exaggeration: Number(o.terrain) || 1 } }),
     layers,
   };

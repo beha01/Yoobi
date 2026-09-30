@@ -111,5 +111,12 @@ check('монумент «Истиқлол» — башня до 112 м, кор�
       and any(o[2]['kind'] == 'dome' and o[2]['tone'] == 'gold' for o in lm.objects))
 check('стилобат монумента — по контуру OSM', lm.overrides[('w', 8)]['height'] == '8')
 
+# Маленький контур далеко от начала координат (миллионы метров): центр не должен уплывать.
+from landmarks import centroid  # noqa: E402
+
+far = [(5962104.0, 4264523.0), (5962107.6, 4264523.0), (5962107.6, 4264526.6), (5962104.0, 4264526.6)]
+cx, cy = centroid(far)
+check('центр маленького контура вдали от начала координат', abs(cx - 5962105.8) < 0.01 and abs(cy - 4264524.8) < 0.01)
+
 print('\nМодели в порядке' if not failed else f'\nОшибок: {failed}')
 sys.exit(1 if failed else 0)

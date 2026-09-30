@@ -84,5 +84,30 @@ ru, _tg, _en = address_names('кӯчаи Мирзо Турсунзода', '8', 
 check('русское имя из OSM лучше переложения', ru == 'улица Мирзо Турсунзаде, 8')
 check('номер с дробью', house_number('32\\1') == '32/1' and house_number('5 а') == '5а')
 
+# Филиалы сетей с их сайтов: дополняют место OSM, добавляют недостающее, помечают пропавшее.
+from places import merge_brands  # noqa: E402
+
+ident = lambda lon, lat: (lon * 100000.0, lat * 100000.0)  # noqa: E731 — 1e-5° = 1 м
+pois = [
+    (68.75000, 38.57000, ('KFC', '', '', ''), 'food', 'fast_food', {}),
+    (68.76000, 38.58000, ('KFC', '', '', ''), 'food', 'fast_food', {}),      # нет на сайте
+    (68.76001, 38.58001, ('Алиф', '', '', ''), 'bank', 'atm', {}),            # банкомат — не отделение
+]
+records = [
+    {'brand': 'KFC', 'name': 'KFC', 'tags': {'amenity': 'fast_food'}, 'lon': 68.75050, 'lat': 38.57000,
+     'phone': '+992 44 610 8989', 'hours': 'Mo-Su 09:00-02:00', 'source': 'kfc.tj', 'fetched': '2026-09-30',
+     'branch': 'Оперка'},
+    {'brand': 'KFC', 'name': 'KFC', 'tags': {'amenity': 'fast_food'}, 'lon': 68.80000, 'lat': 38.60000,
+     'source': 'kfc.tj', 'fetched': '2026-09-30', 'address': 'Проспект Рудаки 161'},
+    {'brand': 'Алиф', 'name': 'Алиф Банк', 'tags': {'amenity': 'bank'}, 'lon': 68.70000, 'lat': 38.50000,
+     'source': 'alif.tj', 'fetched': '2026-09-30'},
+]
+fresh, stats = merge_brands(records, pois, lambda lon, lat: True, ident)
+check('филиал с сайта дополняет место OSM рядом', pois[0][5].get('hours') == 'Mo-Su 09:00-02:00'
+      and pois[0][5].get('bs') == 'kfc.tj' and pois[0][5].get('br') == 'Оперка')
+check('филиала нет в OSM — добавлен на карту и в поиск', len(fresh) == 2 and len(pois) == 5)
+check('место сети, которого нет на сайте, помечено', pois[1][5].get('nb') == 'kfc.tj')
+check('банкомат сети не путается с отделением', 'nb' not in pois[2][5])
+
 print('\nАдреса в порядке' if not failed else f'\nОшибок: {failed}')
 sys.exit(1 if failed else 0)
