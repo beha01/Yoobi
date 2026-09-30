@@ -49,6 +49,10 @@ PIXEL = 10.0
 BASELINE_YEARS = (2017, 2018)  # когда рисовалась большая часть домов в OSM
 RADIUS = {'capital': 11000, 'city': 6000, 'town': 2500}  # м вокруг центра населённого пункта
 INVALID_SCL = (0, 1, 3, 8, 9, 10, 11)  # нет данных, пересвет, тени и облака, снег
+# Старая обработка (2017–2018) принимает светлые крыши за облака; в почти ясный день облачные
+# пиксели не выбрасываются — случайное облако уберёт медиана по нескольким дням.
+CLEAR_SCENE = 3.0   # облачность снимка, %, ниже которой маскируются только пропуски
+CACHE_VERSION = 2
 UA = 'yoobi-map/1.0 (+https://github.com/beha01/Yoobi; imagery.py)'
 
 # Пороги (коэффициенты отражения 0…1). Подобраны на Душанбе: тень высотки темнее 0,075 и
@@ -169,7 +173,8 @@ def read_scene(items, grid):
             with rasterio.open(item['assets']['scl']['href']) as ds:
                 scl = ds.read(1, window=from_bounds(*grid.bounds, ds.transform), out_shape=(grid.h, grid.w),
                               boundless=True, fill_value=0, resampling=Resampling.nearest)
-            ok = ~np.isin(scl, INVALID_SCL)
+            clear = float(item['properties'].get('eo:cloud_cover', 100)) < CLEAR_SCENE
+            ok = ~np.isin(scl, (0, 1) if clear else INVALID_SCL)
             ok &= np.isnan(out['r'])  # соседний квадрат того же дня уже заполнил эти пиксели
             if not ok.any():
                 continue
@@ -193,7 +198,7 @@ def composite(days, grid, cache, want, min_valid=0.85):
     """Медиана по want самым новым ясным дням. Возвращает (каналы, дни, солнце (азимут, высота))."""
     stack, used, sun = [], [], []
     for day, items in sorted(days.items(), reverse=True):
-        path = os.path.join(cache, f'{grid.key()}-{day}.npz') if cache else None
+        path = os.path.join(cache, f'{grid.key()}-{day}-v{CACHE_VERSION}.npz') if cache else None
         if path and os.path.exists(path):
             with np.load(path) as z:
                 scene = {k: z[k].astype('f4') for k in BANDS.values()}
@@ -508,7 +513,7 @@ def areas(osm_path, mask_path=None, only=None):
         lon, lat = o.location.lon, o.location.lat
         if rings and not any(in_ring(lon, lat, r) for r in rings):
             continue  # соседняя страна
-        name = o.tags.get('name:en') or o.tags.get('int_name') or o.tags.get('name', '')
+        name = o.tags.get('name:en') or o.tags.get('int_name') or o.tags.get('name') or f'{kind} {o.id}'
         r = RADIUS['capital'] if o.tags.get('capital') in ('yes', '2') else RADIUS[kind]
         dy, dx = r / 111320, r / (111320 * math.cos(math.radians(lat)))
         boxes.append([name, [lon - dx, lat - dy, lon + dx, lat + dy], r])
@@ -812,7 +817,10 @@ def analyse(index, osm, cache, review=None, today=None):
     stats['старых домов убрать'] = len(hide)
     stats['этажность по тени'] = len(tall)
     if review:
-        draw_review(os.path.join(review, f'{name}.png'), now, old, found, clear, grid)
+        try:
+            draw_review(os.path.join(review, f'{name.replace("/", "-")}.png'), now, old, found, clear, grid)
+        except Exception as e:  # noqa: BLE001 — картинка для проверки не важнее результата
+            print(f'  {name}: картинка не записана — {e}', file=sys.stderr)
     return feats, hide, {k: [v, date] for k, v in tall.items()}, stats
 
 
