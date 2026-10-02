@@ -1,0 +1,5 @@
+node_modules/
+data/
+fonts/
+__pycache__/
+dist/

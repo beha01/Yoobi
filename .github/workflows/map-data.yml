@@ -1,0 +1,69 @@
+name: map-data
+# Собирает карту всего Таджикистана из свежей выгрузки OpenStreetMap и организаций
+# Overture Maps и сохраняет результат в ветку map-data (файлы больше 95 МБ режутся
+# на части *.partNN). Без сторонних actions: Java 21 и Python уже есть на ubuntu-24.04.
+# Запуск: каждую ночь (свежие адреса, дома и организации — Geofabrik обновляет выгрузку
+# ежедневно), при изменении скриптов сборки или вручную (Actions → map-data → Run workflow).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 21 * * *'   # 02:17 по Душанбе
+  push:
+    paths:
+      - 'map/scripts/build-tiles.sh'
+      - 'map/scripts/extras.py'
+      - 'map/scripts/places.py'
+      - 'map/scripts/overture.py'
+      - 'map/scripts/landmarks.py'
+      - 'map/scripts/corrections.py'
+      - 'map/scripts/notes.py'
+      - 'map/scripts/reports.py'
+      - 'map/scripts/update-osm.py'
+      - 'map/scripts/imagery.py'
+      - 'map/scripts/cleanup.py'
+      - 'map/scripts/package-site.py'
+      - 'map/scripts/check-build.py'
+      - 'map/scripts/daily-update.sh'
+      - 'map/site/**'
+      - 'map/tiles/**'
+      - '.github/workflows/map-data.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: map-data
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Код
+        run: git clone -q --depth 1 -b "$GITHUB_REF_NAME" "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" repo
+      - name: Сборка тайлов
+        working-directory: repo/map
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64" PATH="$JAVA_HOME_21_X64/bin:$PATH"
+          java -version
+          python3 -m pip install --quiet --break-system-packages osmium pyarrow || python3 -m pip install --quiet osmium pyarrow
+          PLANETILER_MEMORY=6g ./scripts/build-tiles.sh
+      - name: Сохранить в ветку map-data
+        working-directory: repo/map
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          cp data/sources/tajikistan.osm.pbf data/tajikistan.pmtiles data/tajikistan-extra.pmtiles "$RUNNER_TEMP/out/"
+          cp data/tajikistan-mask.geojson data/tajikistan-search.json "$RUNNER_TEMP/out/" 2>/dev/null || true
+          cd "$RUNNER_TEMP/out"
+          sha256sum * > SHA256SUMS.txt
+          for f in *.pbf *.pmtiles; do
+            if [ "$(stat -c %s "$f")" -gt 95000000 ]; then split -b 90m -d "$f" "$f.part" && rm "$f"; fi
+          done
+          ls -la > MANIFEST.txt
+          git init -q -b map-data
+          git config user.name "map-data bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Map data for Tajikistan: $(date -u +%F)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" map-data

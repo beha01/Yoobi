@@ -1,0 +1,199 @@
+# Дополнительные тайлы для стиля Yoobi Map: то, чего нет в схеме OpenMapTiles.
+# Вход — файл, который готовит scripts/extras.py из выгрузки OSM
+# (см. scripts/build-tiles.sh).
+#
+#   tree      — деревья: точка с диаметром кроны (crown, м), оттенком (shade) и decor
+#   entrance  — подъезды: номер (ref), квартиры (flats), угол стены (angle)
+#   crossing  — пешеходные переходы («зебры»): kind = zebra | signals
+#   barrier   — заборы и стены: объёмная полоса (kind, height) и линия (kind)
+#   parking   — площадки парковок (name)
+#   point     — светофоры, ворота, шлагбаумы, лавочки, фонтаны, туалеты, вода, парковки (kind, name)
+#   label     — названия зданий без мест внутри (name, name:ru, name:tg, name:en)
+#   business  — организации Overture Maps, которых нет в OSM (name…, cat, subclass, rank)
+#   object    — купола и шары минаретов для объёмного слоя (kind, tone, r, h, z, zmin; scripts/landmarks.py)
+#   model     — барабаны куполов, минареты, трибуны стадионов (kind, height, min_height)
+#   pitch     — покрытия площадок: трава, корт, грунт, дорожка, полосы газона (kind)
+#   marking   — разметка площадок: линии, ворота, сетка (kind)
+#   site      — стройки: участок и точка для подписи (kind = construction, name); дома по снимку
+#               Sentinel-2 (kind = imagery, what = tower | levels, date) — карточка пишет «примерно»
+
+schema_name: Yoobi extra
+schema_description: Деревья, подъезды, городские детали и модели ориентиров для стиля Yoobi Map
+attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a> · <a href="https://overturemaps.org" target="_blank">Overture Maps</a> · <a href="https://dataspace.copernicus.eu" target="_blank">Copernicus Sentinel-2</a>'
+
+sources:
+  osm:
+    type: osm
+    local_path: data/extras.osm.pbf
+
+layers:
+  - id: site
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 13
+        include_when:
+          yoobi: site
+        attributes:
+          - key: kind
+          - key: what
+          - key: date
+      - source: osm
+        geometry: point
+        min_zoom: 14
+        include_when:
+          yoobi: site_label
+        attributes:
+          - key: kind
+          - key: name
+  - id: tree
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: tree
+        attributes:
+          - key: crown
+            type: double
+          - key: height
+            type: integer
+          - key: shade
+            type: integer
+          - key: decor
+  - id: entrance
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: entrance
+        attributes:
+          - key: entrance
+          - key: ref
+          - key: flats
+          - key: angle
+            type: integer
+  - id: crossing
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 15
+        include_when:
+          yoobi: crossing
+        attributes:
+          - key: kind
+  - id: barrier
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 15
+        include_when:
+          yoobi: barrier
+        attributes:
+          - key: kind
+          - key: height
+            type: double
+      - source: osm
+        geometry: line
+        min_zoom: 15
+        include_when:
+          yoobi: barrier_line
+        attributes:
+          - key: kind
+  - id: parking
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 15
+        include_when:
+          yoobi: parking
+        attributes:
+          - key: name
+  - id: point
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: point
+        attributes:
+          - key: kind
+          - key: name
+  - id: label
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: label
+        attributes:
+          - key: name
+          - key: name:ru
+          - key: name:tg
+          - key: name:en
+  - id: business
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: business
+        attributes:
+          - key: name
+          - key: name:ru
+          - key: name:tg
+          - key: name:en
+          - key: cat
+          - key: subclass
+          - key: rank
+            type: integer
+  - id: object
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 15
+        include_when:
+          yoobi: object
+        attributes:
+          - key: kind
+          - key: tone
+          - key: r
+            type: double
+          - key: h
+            type: double
+          - key: z
+            type: double
+          - key: zmin
+            type: double
+  - id: model
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 15
+        include_when:
+          yoobi: model
+        attributes:
+          - key: kind
+          - key: height
+            type: double
+          - key: min_height
+            type: double
+  - id: pitch
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 15
+        include_when:
+          yoobi: pitch
+        attributes:
+          - key: kind
+  - id: marking
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 15
+        include_when:
+          yoobi: marking
+        attributes:
+          - key: kind

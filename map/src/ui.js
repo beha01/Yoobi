@@ -1,0 +1,833 @@
+// Панель поиска и карточки мест для MapLibre GL JS — как в городских справочниках:
+// строка поиска с подсказками, карточка места или дома по нажатию на карту
+// (адрес, часы работы, телефон, сайт, организации в здании, что рядом).
+//
+//   import { loadSearch, enableSearchPanel } from './map/src/index.js';
+//   const search = await loadSearch('https://cdn.example.com/map/tajikistan-search.json');
+//   const panel = enableSearchPanel(map, search, { lang: 'ru' });
+//   panel.destroy(); // убрать
+//
+// Цвета панели следуют теме карты: setTheme() ставит data-yoobi-theme на контейнер.
+
+import { CATEGORY_BY_ID, AIRPORT, OTHER, ICONS } from './categories.js';
+import { normalize, formatRoutes } from './search.js';
+
+const TEXT = {
+  ru: {
+    placeholder: 'Адрес, улица, место', clear: 'Очистить', close: 'Закрыть', empty: 'Ничего не нашлось',
+    emptyHint: 'Попробуйте улицу и номер дома или название места', building: 'Здание', inside: 'В здании',
+    nearby: 'Рядом', entrances: 'Подъезды', floors: (n) => `${n} ${plural(n, 'этаж', 'этажа', 'этажей')}`, copy: 'Скопировать координаты',
+    copied: 'Скопировано', results: 'Результаты поиска', km: 'км', m: 'м', loading: 'Загружаю поиск…',
+    approx: 'Точное место не указано — показан центр города', source: 'Данные', postcode: 'Индекс',
+    flats: 'Квартиры', nearest: 'Ближайший адрес',
+    checked: (d) => `Проверено на месте ${d}`, updated: (d) => `Сведения от ${d}`, opened: (d) => `Открыто ${d}`,
+    fromNote: (d) => `По сообщению пользователя OSM от ${d} — ещё не проверено`,
+    approxPlace: 'Место примерное: известен только адрес',
+    tempClosed: 'Временно закрыто',
+    report: 'Сообщить об изменении',
+    noEntrances: 'Подъезды у этого дома ещё не отмечены', markEntrance: 'Отметьте вход через «Сообщить об изменении»',
+    fromReport: (d) => `По сообщению пользователя карты от ${d} — ещё не проверено`,
+    imageryTower: (d) => `Новый дом по спутниковому снимку Sentinel-2 от ${d}: контур и этажность примерные`,
+    imageryLevels: (d) => `Этажность — по тени на спутниковом снимке Sentinel-2 от ${d}, примерно`,
+    onBrandSite: (src, d) => `Есть в списке на сайте сети (${src}), ${d}`,
+    notOnBrandSite: (src) => `Нет в списке на сайте сети (${src}) — возможно, закрыто`,
+  },
+  tg: {
+    placeholder: 'Суроға, кӯча, макон', clear: 'Тоза кардан', close: 'Пӯшидан', empty: 'Ҳеҷ чиз ёфт нашуд',
+    emptyHint: 'Кӯча ва рақами хона ё номи маконро нависед', building: 'Бино', inside: 'Дар бино',
+    nearby: 'Дар наздикӣ', entrances: 'Даромадгоҳҳо', floors: (n) => `${n} ошёна`, copy: 'Нусха гирифтан', copied: 'Нусха шуд',
+    results: 'Натиҷаҳои ҷустуҷӯ', km: 'км', m: 'м', loading: 'Ҷустуҷӯ бор мешавад…',
+    approx: 'Ҷойи дақиқ нишон дода нашудааст', source: 'Маълумот', postcode: 'Индекс', flats: 'Хонаҳо',
+    nearest: 'Суроғаи наздиктарин',
+    checked: (d) => `Дар ҷой санҷида шуд ${d}`, updated: (d) => `Маълумот аз ${d}`, opened: (d) => `Кушода шуд ${d}`,
+    fromNote: (d) => `Аз рӯи хабари корбари OSM аз ${d} — ҳанӯз санҷида нашудааст`,
+    approxPlace: 'Ҷой тахминӣ: танҳо суроға маълум аст',
+    tempClosed: 'Муваққатан баста',
+    report: 'Хабар додан дар бораи тағйирот',
+    noEntrances: 'Даромадгоҳҳои ин хона ҳанӯз қайд нашудаанд', markEntrance: 'Даромадро тавассути «Хабар додан» қайд кунед',
+    fromReport: (d) => `Аз рӯи хабари корбари харита аз ${d} — ҳанӯз санҷида нашудааст`,
+    imageryTower: (d) => `Бинои нав аз рӯи акси моҳвораии Sentinel-2 аз ${d}: шакл ва ошёнаҳо тахминӣ`,
+    imageryLevels: (d) => `Ошёнаҳо аз рӯи соя дар акси моҳвораии Sentinel-2 аз ${d}, тахминӣ`,
+    onBrandSite: (src, d) => `Дар рӯйхати сомонаи шабака ҳаст (${src}), ${d}`,
+    notOnBrandSite: (src) => `Дар рӯйхати сомонаи шабака нест (${src}) — шояд баста шудааст`,
+  },
+  en: {
+    placeholder: 'Address, street, place', clear: 'Clear', close: 'Close', empty: 'Nothing found',
+    emptyHint: 'Try a street and house number or a place name', building: 'Building', inside: 'In this building',
+    nearby: 'Nearby', entrances: 'Entrances', floors: (n) => `${n} ${n === 1 ? 'floor' : 'floors'}`, copy: 'Copy coordinates',
+    copied: 'Copied', results: 'Search results', km: 'km', m: 'm', loading: 'Loading search…',
+    approx: 'Exact location unknown — city centre shown', source: 'Data', postcode: 'Postcode',
+    flats: 'Flats', nearest: 'Nearest address',
+    checked: (d) => `Checked on the ground ${d}`, updated: (d) => `Data as of ${d}`, opened: (d) => `Opened ${d}`,
+    fromNote: (d) => `Reported by an OSM user on ${d} — not verified yet`,
+    approxPlace: 'Approximate location: only the address is known',
+    tempClosed: 'Temporarily closed',
+    report: 'Report a change',
+    noEntrances: 'Entrances of this building are not mapped yet', markEntrance: 'Mark the entrance with “Report a change”',
+    fromReport: (d) => `Reported by a map user on ${d} — not verified yet`,
+    imageryTower: (d) => `New building from a Sentinel-2 satellite image of ${d}: outline and floors are approximate`,
+    imageryLevels: (d) => `Floors estimated from the shadow on a Sentinel-2 satellite image of ${d}`,
+    onBrandSite: (src, d) => `Listed on the chain's website (${src}), ${d}`,
+    notOnBrandSite: (src) => `Not listed on the chain's website (${src}) — may be closed`,
+  },
+};
+
+function plural(n, one, few, many) {
+  const a = n % 10;
+  const b = n % 100;
+  if (a === 1 && b !== 11) return one;
+  if (a >= 2 && a <= 4 && (b < 10 || b >= 20)) return few;
+  return many;
+}
+
+const DAYS = {
+  ru: { Mo: 'Пн', Tu: 'Вт', We: 'Ср', Th: 'Чт', Fr: 'Пт', Sa: 'Сб', Su: 'Вс', off: 'выходной', '24/7': 'круглосуточно' },
+  tg: { Mo: 'Дш', Tu: 'Сш', We: 'Чш', Th: 'Пш', Fr: 'Ҷм', Sa: 'Шб', Su: 'Яш', off: 'рӯзи истироҳат', '24/7': 'шабонарӯзӣ' },
+  en: { Mo: 'Mon', Tu: 'Tue', We: 'Wed', Th: 'Thu', Fr: 'Fri', Sa: 'Sat', Su: 'Sun', off: 'closed', '24/7': 'open 24/7' },
+};
+
+/** Часы работы OSM («Mo-Fr 09:00-18:00; Sa off») — в читаемый вид на нужном языке. */
+export function prettyHours(value, lang = 'ru') {
+  const d = DAYS[lang] || DAYS.ru;
+  return String(value)
+    .replace(/24\/7/g, d['24/7'])
+    .replace(/\b(Mo|Tu|We|Th|Fr|Sa|Su|off)\b/g, (m) => d[m])
+    .replace(/(\d)-(\d)/g, '$1–$2')
+    .replace(/([А-Яа-яA-Za-zҶҷӢӣӮӯ])-([А-Яа-яA-Za-zҶҷӢӣӮӯ])/g, '$1–$2')
+    .replace(/\s*;\s*/g, '; ')
+    .replace(/,(?=\S)/g, ', ');
+}
+
+const DAY_INDEX = { Mo: 0, Tu: 1, We: 2, Th: 3, Fr: 4, Sa: 5, Su: 6 };
+const DAY = '(?:Mo|Tu|We|Th|Fr|Sa|Su)';
+const RULE = new RegExp(`^((?:${DAY}(?:-${DAY})?)(?:\\s*,\\s*${DAY}(?:-${DAY})?)*)?\\s*(.*)$`);
+
+// Разбор opening_hours OSM в недельное расписание: [[начало, конец] в минутах] по дням (пн = 0).
+// Понимает то, что встречается почти всегда: «24/7», «Mo-Fr 09:00-18:00; Sa 10:00-15:00; Su off»,
+// перерывы через запятую и работу за полночь. Остальное (праздники, месяцы) — null.
+function parseHours(value) {
+  const text = String(value || '').trim();
+  if (text === '24/7') return Array.from({ length: 7 }, () => [[0, 1440]]);
+  const week = Array.from({ length: 7 }, () => []);
+  for (const part of text.split(/\s*;\s*/).filter(Boolean)) {
+    const m = part.match(RULE);
+    if (!m) return null;
+    let days = [0, 1, 2, 3, 4, 5, 6];
+    if (m[1]) {
+      days = [];
+      for (const range of m[1].split(/\s*,\s*/)) {
+        const [a, b = a] = range.split('-');
+        for (let i = DAY_INDEX[a], n = 0; n < 7; i = (i + 1) % 7, n++) {
+          days.push(i);
+          if (i === DAY_INDEX[b]) break;
+        }
+      }
+    }
+    const rest = m[2].trim();
+    let spans = [];
+    if (rest === '24/7') spans = [[0, 1440]];
+    else if (rest !== 'off' && rest !== 'closed') {
+      for (const t of rest.split(/\s*,\s*/)) {
+        const tm = t.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+        if (!tm) return null;
+        const from = +tm[1] * 60 + +tm[2];
+        let to = +tm[3] * 60 + +tm[4];
+        if (to <= from) to += 1440; // за полночь
+        spans.push([from, to]);
+      }
+    }
+    for (const d of days) week[d] = spans;
+  }
+  return week;
+}
+
+const STATUS = {
+  ru: { always: 'Открыто круглосуточно', until: (t) => `Открыто до ${t}`, today: (t) => `Закрыто, откроется в ${t}`,
+    tomorrow: (t) => `Закрыто, откроется завтра в ${t}`, later: (d, t) => `Закрыто, откроется в ${d} в ${t}`,
+    days: ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'] },
+  tg: { always: 'Шабонарӯзӣ кушода', until: (t) => `Кушода то ${t}`, today: (t) => `Пӯшида, соати ${t} кушода мешавад`,
+    tomorrow: (t) => `Пӯшида, фардо соати ${t} кушода мешавад`, later: (d, t) => `Пӯшида, ${d} соати ${t} кушода мешавад`,
+    days: ['дш', 'сш', 'чш', 'пш', 'ҷм', 'шб', 'яш'] },
+  en: { always: 'Open 24 hours', until: (t) => `Open until ${t}`, today: (t) => `Closed, opens at ${t}`,
+    tomorrow: (t) => `Closed, opens tomorrow at ${t}`, later: (d, t) => `Closed, opens ${d} at ${t}`,
+    days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
+};
+
+/**
+ * Открыто ли сейчас по opening_hours OSM — по времени Таджикистана (UTC+5).
+ * { open, text } или null, если расписание не разобрать.
+ */
+export function openingStatus(value, { now = new Date(), lang = 'ru', utcOffset = 300 } = {}) {
+  const week = parseHours(value);
+  if (!week) return null;
+  const t = STATUS[lang] || STATUS.ru;
+  const local = new Date(now.getTime() + utcOffset * 60000);
+  const day = (local.getUTCDay() + 6) % 7;
+  const minute = day * 1440 + local.getUTCHours() * 60 + local.getUTCMinutes();
+  // Интервалы на две недели вперёд (и хвост прошлого воскресенья за полночь), смежные — слиты.
+  const spans = [];
+  for (let d = -1; d < 14; d++) {
+    for (const [a, b] of week[(d + 7) % 7]) spans.push([d * 1440 + a, d * 1440 + b]);
+  }
+  spans.sort((x, y) => x[0] - y[0]);
+  const merged = [];
+  for (const s of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s[0] <= last[1]) last[1] = Math.max(last[1], s[1]);
+    else merged.push([...s]);
+  }
+  const hhmm = (m) => `${String(Math.floor((m % 1440) / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const current = merged.find(([a, b]) => a <= minute && minute < b);
+  if (current) {
+    if (current[1] - current[0] >= 7 * 1440) return { open: true, text: t.always };
+    return { open: true, text: t.until(hhmm(current[1])) };
+  }
+  const next = merged.find(([a]) => a > minute);
+  if (!next) return { open: false, text: t.later('', '').replace(/\s+в\s+$/, '').trim() };
+  const nextDay = Math.floor(next[0] / 1440);
+  const text = nextDay === day ? t.today(hhmm(next[0]))
+    : nextDay === day + 1 ? t.tomorrow(hhmm(next[0]))
+      : t.later(t.days[nextDay % 7], hhmm(next[0]));
+  return { open: false, text };
+}
+
+/**
+ * Этажность дома по высоте из тайлов. Planetiler пишет render_height = ceil(этажи × 3,66),
+ * если в OSM указаны этажи, иначе — высоту из OSM, а 5 м — если о доме ничего не известно.
+ * Поэтому 4 этажа (15 м) → 4, 5 этажей (19 м) → 5, а 5 м — «неизвестно» (0), без выдумки.
+ */
+export function floorsFromHeight(height) {
+  if (!height || height === 5) return 0;
+  return Math.max(1, Math.round(height / 3.66));
+}
+
+const svg = (d, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
+const I = {
+  search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+  close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+  pin: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z',
+  clock: 'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z',
+  phone: 'M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1C10.61 21 3 13.39 3 4c0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z',
+  globe: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm6.93 6h-2.95a15.65 15.65 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.93 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.08 16zm2.95-8H5.08a7.99 7.99 0 0 1 4.33-3.56A15.65 15.65 0 0 0 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z',
+  building: 'M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z',
+  street: 'M11 2h2v4h-2zm0 7h2v6h-2zm0 9h2v4h-2zM4 2h2v20H4zm14 0h2v20h-2z',
+  place: 'M12 2 3 7v2h18V7l-9-5zM5 11v7H4v3h16v-3h-1v-7h-2v7h-3v-7h-2v7H9v-7H5z',
+  copy: 'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z',
+  flag: 'M14.4 6 14 4H5v17h2v-7h5.6l.4 2h7V6z',
+  check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+  info: 'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
+};
+
+const CSS = `
+.yoobi-panel{--y-bg:#fff;--y-fg:#1f2329;--y-muted:#6b7280;--y-line:#e7e3dc;--y-hover:#f4f1ec;--y-accent:#2f6fe4;
+  --y-shadow:0 6px 24px rgba(28,32,40,.16),0 1px 3px rgba(28,32,40,.1);--y-chip:#f3f0ea;
+  position:absolute;z-index:3;top:10px;left:10px;width:336px;max-width:calc(100% - 20px);
+  display:flex;flex-direction:column;gap:8px;font:14px/1.35 system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;
+  color:var(--y-fg);pointer-events:none}
+[data-yoobi-theme="dark"] .yoobi-panel{--y-bg:#232830;--y-fg:#e8ebef;--y-muted:#9aa3ae;--y-line:#343b46;--y-hover:#2c323c;
+  --y-accent:#6fa3f0;--y-shadow:0 8px 28px rgba(0,0,0,.45),0 1px 3px rgba(0,0,0,.3);--y-chip:#2c323c}
+.yoobi-panel>*{pointer-events:auto}
+.yoobi-box{display:flex;align-items:center;gap:6px;height:42px;padding:0 5px 0 12px;border-radius:12px;background:var(--y-bg);
+  box-shadow:var(--y-shadow)}
+.yoobi-box svg{flex:none;color:var(--y-muted)}
+.yoobi-box input{flex:1;min-width:0;height:100%;border:0;outline:0;background:transparent;color:var(--y-fg);font:inherit;font-size:15px}
+.yoobi-box input::placeholder{color:var(--y-muted)}
+.yoobi-box input::-webkit-search-cancel-button{display:none}
+.yoobi-icon-btn{flex:none;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:9px;
+  background:transparent;color:var(--y-muted);cursor:pointer}
+.yoobi-icon-btn:hover{background:var(--y-hover);color:var(--y-fg)}
+.yoobi-icon-btn:focus-visible,.yoobi-row:focus-visible{outline:2px solid var(--y-accent);outline-offset:-2px}
+.yoobi-list,.yoobi-card{background:var(--y-bg);border-radius:12px;box-shadow:var(--y-shadow);overflow:auto;max-height:min(60vh,500px)}
+.yoobi-list{padding:6px 0;margin:0;list-style:none}
+.yoobi-row{display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer}
+.yoobi-row[aria-selected="true"],.yoobi-row:hover{background:var(--y-hover)}
+.yoobi-dot{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;color:#fff}
+.yoobi-dot svg{width:15px;height:15px}
+.yoobi-row-text{flex:1;min-width:0}
+.yoobi-row-title{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yoobi-row-title mark{background:none;color:var(--y-accent);font-weight:700}
+.yoobi-row-sub{color:var(--y-muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yoobi-row-dist{flex:none;color:var(--y-muted);font-size:12px;font-variant-numeric:tabular-nums}
+.yoobi-empty{padding:14px 16px;color:var(--y-muted)}
+.yoobi-empty b{display:block;color:var(--y-fg);font-weight:600;margin-bottom:2px}
+.yoobi-card{padding:12px 14px 10px;position:relative}
+.yoobi-card-head{display:flex;gap:12px;align-items:flex-start;padding-right:30px}
+.yoobi-card-head .yoobi-dot{width:34px;height:34px}
+.yoobi-card-head .yoobi-dot svg{width:19px;height:19px}
+.yoobi-card h2{margin:0;font-size:16px;line-height:1.25;font-weight:650;text-wrap:balance}
+.yoobi-card-type{color:var(--y-muted);margin-top:2px}
+.yoobi-card-alt{color:var(--y-muted);font-size:13px;margin-top:1px}
+.yoobi-open{font-weight:600;color:#1e9e57}
+.yoobi-closed{font-weight:600;color:#d64541}
+[data-yoobi-theme="dark"] .yoobi-open{color:#4cc27f}
+[data-yoobi-theme="dark"] .yoobi-closed{color:#f07470}
+.yoobi-note{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--y-chip);color:var(--y-muted);font-size:13px}
+.yoobi-source{margin-top:8px;color:var(--y-muted);font-size:11.5px}
+.yoobi-facts li.yoobi-fresh{color:var(--y-muted);font-size:12.5px}
+.yoobi-facts li.yoobi-ok{color:#1e9e57;font-size:12.5px}
+.yoobi-facts li.yoobi-warn{color:#b26a00;font-size:12.5px}
+[data-yoobi-theme="dark"] .yoobi-facts li.yoobi-ok{color:#4cc27f}
+[data-yoobi-theme="dark"] .yoobi-facts li.yoobi-warn{color:#f0b35a}
+.yoobi-card .yoobi-icon-btn.yoobi-x{position:absolute;top:10px;right:10px}
+.yoobi-facts{display:grid;gap:8px;margin:12px 0 4px;padding:0;list-style:none}
+.yoobi-facts li{display:flex;gap:10px;align-items:flex-start}
+.yoobi-facts svg{flex:none;margin-top:1px;color:var(--y-muted)}
+.yoobi-facts a{color:var(--y-accent);text-decoration:none;word-break:break-word}
+.yoobi-facts a:hover{text-decoration:underline}
+.yoobi-section{margin-top:12px;border-top:1px solid var(--y-line);padding-top:10px}
+.yoobi-section h3{margin:0 0 4px;font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--y-muted)}
+.yoobi-section .yoobi-row{padding:6px 0;margin:0 -4px;border-radius:10px;padding-inline:4px}
+.yoobi-section .yoobi-dot{width:24px;height:24px}
+.yoobi-section .yoobi-dot svg{width:14px;height:14px}
+.yoobi-coords{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--y-muted);font-size:12px;font-variant-numeric:tabular-nums}
+.yoobi-coords button{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:8px;padding:4px 8px;
+  background:var(--y-chip);color:var(--y-fg);font:inherit;cursor:pointer}
+.yoobi-report-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:10px;padding:8px 10px;
+  border:1px solid var(--y-line);border-radius:10px;background:transparent;color:var(--y-fg);font:600 13px/1.2 inherit;
+  font-family:inherit;cursor:pointer}
+.yoobi-report-btn svg{color:#e8770e}
+.yoobi-report-btn:hover{background:var(--y-hover)}
+.yoobi-report-btn:focus-visible{outline:2px solid var(--y-accent);outline-offset:1px}
+.yoobi-pin{position:absolute;left:0;top:0;width:30px;height:40px;margin:-38px 0 0 -15px;z-index:2;pointer-events:none;
+  filter:drop-shadow(0 3px 4px rgba(0,0,0,.3));will-change:transform}
+.yoobi-pin svg{display:block}
+.yoobi-hidden{display:none!important}
+@media (max-width:560px){
+  .yoobi-panel{top:8px;left:8px;width:auto;right:8px;max-width:none}
+  .yoobi-box input{font-size:16px}
+  .yoobi-has-panel .maplibregl-ctrl-top-right{top:58px}
+  .yoobi-card{position:fixed;left:0;right:0;bottom:0;border-radius:18px 18px 0 0;max-height:52vh;
+    padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+}
+`;
+
+function el(tag, cls, html) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html !== undefined) e.innerHTML = html;
+  return e;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+function badge(item) {
+  if (item.kind === 'poi') {
+    // Тот же рисунок, что на карте: по типу места (кафе, банкомат, одежда), иначе — по категории.
+    const cat = item.category === 'airport' ? AIRPORT : CATEGORY_BY_ID[item.category] || OTHER;
+    return { color: cat.color, icon: ICONS[cat.icons?.[item.osmType] || cat.icon] || ICONS.dot };
+  }
+  if (item.kind === 'address') return { color: '#8a7f72', icon: I.building };
+  if (item.kind === 'entrance') return { color: '#7A6652', icon: ICONS.door };
+  if (item.kind === 'street') return { color: '#7b8594', icon: I.street };
+  return { color: '#5a6b85', icon: I.place };
+}
+
+function dot(item) {
+  const b = badge(item);
+  return `<span class="yoobi-dot" style="background:${b.color}">${svg(b.icon)}</span>`;
+}
+
+// Подсветка найденного начала слов.
+function highlight(title, query) {
+  const words = normalize(query).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 0);
+  if (!words.length) return esc(title);
+  const norm = normalize(title);
+  if (norm.length !== title.length) return esc(title);
+  const marks = new Array(title.length).fill(false);
+  for (const w of words) {
+    let i = -1;
+    while ((i = norm.indexOf(w, i + 1)) >= 0) {
+      if (i === 0 || /[^\p{L}\p{N}]/u.test(norm[i - 1])) for (let k = i; k < i + w.length; k++) marks[k] = true;
+    }
+  }
+  let out = '';
+  for (let i = 0; i < title.length; i++) {
+    const open = marks[i] && !marks[i - 1];
+    const close = marks[i] && !marks[i + 1];
+    out += (open ? '<mark>' : '') + esc(title[i]) + (close ? '</mark>' : '');
+  }
+  return out;
+}
+
+function formatDistance(m, t) {
+  if (m == null) return '';
+  if (m < 1000) return `${Math.max(10, Math.round(m / 10) * 10)} ${t.m}`;
+  return `${(m / 1000).toFixed(m < 10000 ? 1 : 0).replace('.', ',')} ${t.km}`;
+}
+
+// Масштаб, на который приближаемся к найденному.
+const ZOOM = { city: 12, town: 13.5, village: 15, hamlet: 15.5, suburb: 14.5, quarter: 15.5, neighbourhood: 15.5 };
+const zoomFor = (item) => (item.kind === 'place' ? ZOOM[item.category] || 15 : item.kind === 'street' ? 16.5 : 17.6);
+
+const BUILDING_LAYERS = ['building-3d', 'building'];
+
+function inRing([x, y], ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// Тайлы склеивают одинаковые дома в один мультиполигон — берём тот дом, на который нажали
+// (или ближайший к точке, если нажали на стену объёмного дома).
+function pickPolygon(feature, point) {
+  const g = feature.geometry;
+  if (g.type !== 'Polygon' && g.type !== 'MultiPolygon') return null;
+  const polygons = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  let best = polygons.find((p) => inRing(point, p[0]));
+  if (!best) {
+    const d = (p) => Math.min(...p[0].map(([x, y]) => (x - point[0]) ** 2 + (y - point[1]) ** 2));
+    best = polygons.reduce((a, b) => (d(b) < d(a) ? b : a));
+  }
+  return { geometry: { type: 'Polygon', coordinates: best }, properties: feature.properties };
+}
+const PLACE_LAYERS = ['poi-icon', 'poi-label', 'poi-landmark', 'poi-minor', 'park-label', 'airport-label',
+  'business-main', 'business-minor'];
+
+/**
+ * Панель поиска и карточки мест. search — результат createSearch()/loadSearch().
+ * Возвращает { open(item), close(), setLang(lang), destroy() }.
+ */
+export function enableSearchPanel(map, source, { lang = 'ru', placeholder, clickable = true, onReport = null } = {}) {
+  let t = TEXT[lang] || TEXT.ru;
+  // Индекс может ещё грузиться (передано обещание): строка поиска появляется сразу.
+  let search = source && typeof source.then !== 'function' ? source : null;
+  if (!search) {
+    Promise.resolve(source).then((s) => {
+      search = s;
+      if (input.value.trim()) run();
+    }, (err) => console.warn('Поиск недоступен:', err));
+  }
+  const container = map.getContainer();
+  if (!document.getElementById('yoobi-ui-css')) {
+    const style = document.createElement('style');
+    style.id = 'yoobi-ui-css';
+    style.textContent = CSS;
+    document.head.append(style);
+  }
+
+  container.classList.add('yoobi-has-panel');
+  const panel = el('div', 'yoobi-panel');
+  const box = el('div', 'yoobi-box');
+  box.innerHTML = `${svg(I.search, 20)}<input type="search" role="combobox" aria-autocomplete="list" aria-expanded="false"
+    autocomplete="off" spellcheck="false" enterkeyhint="search"><button type="button" class="yoobi-icon-btn yoobi-hidden">${svg(I.close)}</button>`;
+  const input = box.querySelector('input');
+  const clear = box.querySelector('button');
+  const list = el('ul', 'yoobi-list yoobi-hidden');
+  list.id = `yoobi-list-${Math.random().toString(36).slice(2, 8)}`;
+  list.setAttribute('role', 'listbox');
+  input.setAttribute('aria-controls', list.id);
+  const card = el('div', 'yoobi-card yoobi-hidden');
+  card.setAttribute('role', 'dialog');
+  panel.append(box, list, card);
+  container.append(panel);
+
+  const pin = el('div', 'yoobi-pin yoobi-hidden',
+    '<svg width="30" height="40" viewBox="0 0 30 40"><path d="M15 39s13-13.4 13-23.5C28 7.5 22.2 2 15 2S2 7.5 2 15.5C2 25.6 15 39 15 39z" fill="#E8433F" stroke="#fff" stroke-width="2"/><circle cx="15" cy="15.5" r="5" fill="#fff"/></svg>');
+  container.append(pin);
+  let pinAt = null;
+  const placePin = () => {
+    if (!pinAt) return;
+    const p = map.project(pinAt);
+    pin.style.transform = `translate(${p.x}px, ${p.y}px)`;
+  };
+  map.on('move', placePin);
+
+  let results = [];
+  let resultsFor = null; // запрос, для которого посчитаны results
+  let active = -1;
+  let timer;
+
+  function applyText() {
+    input.placeholder = placeholder || t.placeholder;
+    input.setAttribute('aria-label', placeholder || t.placeholder);
+    clear.title = t.clear;
+    clear.setAttribute('aria-label', t.clear);
+    list.setAttribute('aria-label', t.results);
+  }
+  applyText();
+
+  // Пока открыты подсказки, карточка прячется под ними и возвращается, если ничего не выбрали.
+  function showList(show) {
+    list.classList.toggle('yoobi-hidden', !show);
+    input.setAttribute('aria-expanded', String(show));
+    card.classList.toggle('yoobi-hidden', show || !pinAt);
+  }
+
+  function render() {
+    const q = input.value;
+    clear.classList.toggle('yoobi-hidden', !q);
+    if (!q.trim()) { showList(false); return; }
+    if (!results.length) {
+      list.innerHTML = `<li class="yoobi-empty"><b>${esc(t.empty)}</b>${esc(t.emptyHint)}</li>`;
+      showList(true);
+      return;
+    }
+    list.innerHTML = results.map((r, i) => `<li class="yoobi-row" role="option" id="${list.id}-${i}" aria-selected="${i === active}">
+      ${dot(r)}<span class="yoobi-row-text"><div class="yoobi-row-title">${highlight(r.title, q)}</div>
+      <div class="yoobi-row-sub">${esc(r.subtitle)}</div></span><span class="yoobi-row-dist">${formatDistance(r.distance, t)}</span></li>`).join('');
+    input.setAttribute('aria-activedescendant', active >= 0 ? `${list.id}-${active}` : '');
+    showList(true);
+  }
+
+  function run() {
+    if (!search) {
+      list.innerHTML = `<li class="yoobi-empty">${esc(t.loading)}</li>`;
+      showList(Boolean(input.value.trim()));
+      return;
+    }
+    const c = map.getCenter();
+    resultsFor = input.value;
+    results = search.search(input.value, { center: [c.lng, c.lat], lang, limit: 8 });
+    active = -1;
+    render();
+  }
+
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 60); });
+  input.addEventListener('focus', () => { if (input.value.trim()) render(); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!results.length) return;
+      e.preventDefault();
+      active = (active + (e.key === 'ArrowDown' ? 1 : -1) + results.length) % results.length;
+      render();
+    } else if (e.key === 'Enter') {
+      clearTimeout(timer);
+      if (resultsFor !== input.value) run(); // Enter раньше, чем обновились подсказки
+      const r = results[Math.max(active, 0)];
+      if (r) choose(r);
+    } else if (e.key === 'Escape') {
+      if (!list.classList.contains('yoobi-hidden')) showList(false);
+      else { input.value = ''; render(); close(); }
+    }
+  });
+  list.addEventListener('mousedown', (e) => e.preventDefault()); // не терять фокус до клика
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.yoobi-row');
+    if (row) choose(results[Number(row.id.split('-').pop())]);
+  });
+  clear.addEventListener('click', () => { input.value = ''; results = []; resultsFor = ''; render(); close(); input.focus(); });
+
+  function choose(item) {
+    input.value = item.title;
+    showList(false);
+    input.blur();
+    map.flyTo({ center: [item.lon, item.lat], zoom: Math.max(zoomFor(item), item.kind === 'place' ? 0 : map.getZoom()), speed: 1.6 });
+    open(item);
+  }
+
+  const link = (url) => {
+    const href = /^https?:\/\//.test(url) ? url : `https://${url}`;
+    const label = url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+    return `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label.length > 42 ? `${label.slice(0, 40)}…` : label)}</a>`;
+  };
+
+  // Адрес, часы («Открыто до 22:00»), телефоны, сайт и соцсети места.
+  function facts(item) {
+    const out = [];
+    const info = item.info || {};
+    const home = item.kind === 'poi' && !item.approx ? search.reverse(item.lon, item.lat, { lang, radius: 40 }) : null;
+    const where = home?.title || info.addr;
+    if (where) out.push(`<li>${svg(I.pin)}<span>${esc(where)}${item.place ? `, ${esc(item.place)}` : ''}</span></li>`);
+    if (info.hours) {
+      const status = openingStatus(info.hours, { lang });
+      const line = status ? `<span class="${status.open ? 'yoobi-open' : 'yoobi-closed'}">${esc(status.text)}</span><br>` : '';
+      out.push(`<li>${svg(I.clock)}<span>${line}${esc(prettyHours(info.hours, lang))}</span></li>`);
+    }
+    for (const p of (info.phone || '').split(/\s*;\s*/).filter(Boolean).slice(0, 3)) {
+      out.push(`<li>${svg(I.phone)}<a href="tel:${esc(p.replace(/[^\d+]/g, ''))}">${esc(p)}</a></li>`);
+    }
+    if (info.routes) out.push(`<li>${svg(ICONS.bus)}<span>${esc(formatRoutes(info.routes, lang))}</span></li>`);
+    if (info.site) out.push(`<li>${svg(I.globe)}${link(info.site)}</li>`);
+    for (const social of [info.social, info.insta].filter(Boolean)) out.push(`<li>${svg(I.globe)}${link(social)}</li>`);
+    // Насколько сведения свежие: курьеру важно, не устарело ли место.
+    const day = (d) => String(d).slice(0, 10).split('-').reverse().join('.');
+    if (info.tc) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.tempClosed)}</span></li>`);
+    if (info.ap) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.approxPlace)}</span></li>`);
+    if (info.nt) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.fromNote(day(info.nt)))}</span></li>`);
+    if (info.rp) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.fromReport(day(info.rp)))}</span></li>`);
+    if (info.since && Date.now() - Date.parse(info.since) < 3 * 365 * 864e5) {
+      out.push(`<li class="yoobi-fresh">${svg(I.clock)}<span>${esc(t.opened(day(info.since)))}</span></li>`);
+    }
+    if (info.nb) out.push(`<li class="yoobi-warn">${svg(I.info)}<span>${esc(t.notOnBrandSite(info.nb))}</span></li>`);
+    if (info.bs) out.push(`<li class="yoobi-ok">${svg(I.check)}<span>${esc(t.onBrandSite(info.bs, day(info.bchk || '')))}</span></li>`);
+    if (info.chk) out.push(`<li class="yoobi-ok">${svg(I.check)}<span>${esc(t.checked(day(info.chk)))}</span></li>`);
+    else if (info.up && !info.nt && !info.rp && !info.bs) out.push(`<li class="yoobi-fresh">${svg(I.clock)}<span>${esc(t.updated(day(info.up)))}</span></li>`);
+    const list = out.length ? `<ul class="yoobi-facts">${out.join('')}</ul>` : '';
+    const note = item.approx ? `<div class="yoobi-note">${esc(t.approx)}</div>` : '';
+    return list + note;
+  }
+
+  // Сведения о доме: индекс и квартиры, если есть в OSM.
+  function houseFacts(address) {
+    const info = address?.info || {};
+    const out = [];
+    if (info.pc) out.push(`<li>${svg(I.pin)}<span>${esc(t.postcode)} ${esc(info.pc)}</span></li>`);
+    if (info.fl) out.push(`<li>${svg(I.building)}<span>${esc(t.flats)} ${esc(info.fl)}</span></li>`);
+    return out.length ? `<ul class="yoobi-facts">${out.join('')}</ul>` : '';
+  }
+
+  function section(title, items) {
+    if (!items.length) return '';
+    return `<div class="yoobi-section"><h3>${esc(title)}</h3>${items.map((r, i) => `<div class="yoobi-row" tabindex="0" data-i="${i}">
+      ${dot(r)}<span class="yoobi-row-text"><div class="yoobi-row-title">${esc(r.title)}</div>
+      <div class="yoobi-row-sub">${esc(r.type)}</div></span></div>`).join('')}</div>`;
+  }
+
+  let related = [];
+  function show({ item, title, alt = '', type, extra = '', inside = [], nearby = [], nearbyTitle = t.nearby, at, marker = true,
+    entrances = [] }) {
+    related = [...entrances, ...inside, ...nearby];
+    const coords = `${at[1].toFixed(5)}, ${at[0].toFixed(5)}`;
+    const sources = new Set([item, ...inside].map((r) => r.source).filter(Boolean));
+    // «OpenStreetMap, 29.09.2026»: насколько свежие данные.
+    const dated = (name) => {
+      const d = search?.dates?.[name === 'Overture Maps' ? 'overture' : 'osm'];
+      return d ? `${name}, ${d.split('-').reverse().join('.')}` : name;
+    };
+    card.innerHTML = `<button type="button" class="yoobi-icon-btn yoobi-x" aria-label="${esc(t.close)}" title="${esc(t.close)}">${svg(I.close)}</button>
+      <div class="yoobi-card-head">${dot(item)}<div><h2>${esc(title)}</h2>${alt ? `<div class="yoobi-card-alt">${esc(alt)}</div>` : ''}
+      <div class="yoobi-card-type">${esc(type)}</div></div></div>
+      ${extra}${section(`${t.entrances} · ${entrances.length}`, entrances)}${section(`${t.inside} · ${inside.length}`, inside)}${section(nearbyTitle, nearby)}
+      <div class="yoobi-coords"><span>${coords}</span><button type="button" title="${esc(t.copy)}">${svg(I.copy, 14)}<span>${esc(t.copy)}</span></button></div>
+      ${onReport ? `<button type="button" class="yoobi-report-btn">${svg(I.flag, 16)}<span>${esc(t.report)}</span></button>` : ''}
+      ${sources.size ? `<div class="yoobi-source">${esc(t.source)}: ${[...sources].map((n) => esc(dated(n))).join(' · ')}</div>` : ''}`;
+    card.setAttribute('aria-label', title);
+    card.classList.remove('yoobi-hidden');
+    card.querySelector('.yoobi-x').addEventListener('click', close);
+    // «Сообщить об изменении»: что знает курьер или житель, а в данных ещё нет (src/reports.js).
+    card.querySelector('.yoobi-report-btn')?.addEventListener('click', () => onReport({
+      item, title, type, at, entrances, inside, house: item.kind === 'address', lang,
+    }));
+    const copy = card.querySelector('.yoobi-coords button');
+    copy.addEventListener('click', () => {
+      const done = () => { copy.lastChild.textContent = t.copied; };
+      navigator.clipboard?.writeText(coords).then(done, () => {});
+    });
+    card.querySelectorAll('.yoobi-section .yoobi-row').forEach((row, i) => {
+      const go = () => {
+        // Индексы секций: сначала «в здании», затем «рядом».
+        const r = related[i];
+        map.easeTo({ center: [r.lon, r.lat] });
+        open(r);
+      };
+      row.addEventListener('click', go);
+      row.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    });
+    // У дома булавка не нужна: он подсвечен, а номер на крыше должен оставаться виден.
+    pinAt = at;
+    pin.classList.toggle('yoobi-hidden', !marker);
+    placePin();
+  }
+
+  // Дом из поиска: когда карта доедет, подсветить здание под точкой адреса, убрать булавку
+  // и уточнить этажность по высоте дома, если в OSM её нет.
+  function highlightHouse(item) {
+    const apply = () => {
+      if (pinAt?.[0] !== item.lon || pinAt?.[1] !== item.lat) return; // карточку уже сменили
+      const layers = BUILDING_LAYERS.filter((id) => map.getLayer(id));
+      const hit = layers.length ? map.queryRenderedFeatures(map.project([item.lon, item.lat]), { layers })[0] : null;
+      const building = hit && pickPolygon(hit, [item.lon, item.lat]);
+      if (!building || !inRing([item.lon, item.lat], building.geometry.coordinates[0])) return;
+      setSelection(building);
+      pin.classList.add('yoobi-hidden');
+      const type = card.querySelector('.yoobi-card-type');
+      if (type && !item.info?.lv) type.textContent = houseType(item, building.properties.render_height);
+    };
+    const wait = () => map.once('idle', apply);
+    if (map.isMoving()) map.once('moveend', wait);
+    else wait();
+    map.triggerRepaint();
+  }
+
+  let current = null; // как перерисовать открытую карточку (например, на другом языке)
+
+  /** Открыть карточку результата поиска (объект из search.search/nearby/inside). */
+  function open(item) {
+    if (!search) return;
+    current = item.id != null ? () => open(search.get(item.id, { lang }) || item) : null;
+    setSelection(null);
+    const radius = { address: 40, street: 120, poi: 25 }[item.kind];
+    const nearby = radius
+      ? search.nearby(item.lon, item.lat, { radius, lang, limit: 7 })
+        .filter((r) => r.id !== item.id).slice(0, item.kind === 'poi' ? 4 : 6)
+      : [];
+    show({
+      item,
+      title: item.title,
+      alt: item.alt,
+      type: item.kind === 'poi' ? [item.type, item.info?.br, item.place].filter(Boolean).join(' · ')
+        : item.kind === 'address' ? houseType(item) : item.subtitle,
+      extra: item.kind === 'address' ? houseFacts(item) : facts(item),
+      nearby,
+      at: [item.lon, item.lat],
+    });
+    if (item.kind === 'address') highlightHouse(item);
+  }
+
+  // «Жилой дом · 9 этажей · Душанбе»: этажность из OSM, а если её нет — по высоте дома.
+  function houseType(address, height) {
+    const levels = address?.info?.lv || floorsFromHeight(height);
+    return [address?.type || t.building, levels > 1 ? t.floors(levels) : '', address?.place].filter(Boolean).join(' · ');
+  }
+
+  function close() {
+    current = null;
+    card.classList.add('yoobi-hidden');
+    pin.classList.add('yoobi-hidden');
+    pinAt = null;
+    setSelection(null);
+  }
+
+  // Подсветка выбранного дома и его подъездов — отдельный источник поверх стиля.
+  function setSelection(feature, entrances = []) {
+    const data = { type: 'FeatureCollection', features: feature ? [{ type: 'Feature', geometry: feature.geometry, properties: {
+      height: (feature.properties.render_height || 0) + 0.4, base: feature.properties.render_min_height || 0 } },
+    ...entrances.map((e) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [e.lon, e.lat] },
+      properties: { label: e.title.replace(/^\D+/, '') || '•' } }))] : [] };
+    if (!map.getSource('yoobi-selection')) {
+      if (!feature) return;
+      map.addSource('yoobi-selection', { type: 'geojson', data });
+      const threeD = map.getLayer('building-3d') && map.getLayoutProperty('building-3d', 'visibility') !== 'none';
+      // Подсветка — под подписями: номер дома и названия остаются поверх неё.
+      const before = map.getLayer('housenumber') ? 'housenumber' : undefined;
+      const polygon = ['==', ['geometry-type'], 'Polygon'];
+      map.addLayer({ id: 'yoobi-selection-fill', type: threeD ? 'fill-extrusion' : 'fill', source: 'yoobi-selection',
+        filter: polygon,
+        paint: threeD
+          ? { 'fill-extrusion-color': '#6FA3F0', 'fill-extrusion-opacity': 0.55, 'fill-extrusion-height': ['get', 'height'],
+            'fill-extrusion-base': ['get', 'base'] }
+          : { 'fill-color': '#6FA3F0', 'fill-opacity': 0.35 } }, before);
+      map.addLayer({ id: 'yoobi-selection-line', type: 'line', source: 'yoobi-selection', filter: polygon,
+        paint: { 'line-color': '#2F6FE4', 'line-width': 2 } }, before);
+      // Подъезды выбранного дома видны и издалека: дверь и номер.
+      map.addLayer({ id: 'yoobi-selection-entrances', type: 'symbol', source: 'yoobi-selection',
+        filter: ['==', ['geometry-type'], 'Point'],
+        layout: { 'icon-image': 'label-entrance', 'icon-text-fit': 'both', 'icon-text-fit-padding': [0, 2, 0, 1],
+          'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 11, 'text-anchor': 'left',
+          'text-offset': [1.35, 0], 'icon-allow-overlap': true, 'text-allow-overlap': true },
+        paint: { 'text-color': '#5B4A3A' } });
+      return;
+    }
+    map.getSource('yoobi-selection').setData(data);
+  }
+
+  // Нажатие на карту: место → его карточка, дом → адрес и организации внутри.
+  function onClick(e) {
+    if (!search) return;
+    // Соседние страны под «заморозкой» — их нажатие обрабатывает enableLockedCountries.
+    const locked = ['outside-frost', 'neighbor-lock'].filter((id) => map.getLayer(id));
+    if (locked.length && map.queryRenderedFeatures(e.point, { layers: locked }).length) return;
+    // Отметка на карте (src/reports.js): нажатия ставят точку, а не открывают карточку.
+    if (container.dataset.yoobiMode) return;
+    const notes = ['yoobi-reports-dot', 'yoobi-reports-line'].filter((id) => map.getLayer(id));
+    if (notes.length && map.queryRenderedFeatures(e.point, { layers: notes }).length) return;
+    const layers = [...PLACE_LAYERS, ...BUILDING_LAYERS].filter((id) => map.getLayer(id));
+    const features = map.queryRenderedFeatures(e.point, { layers });
+    const placeFeature = features.find((f) => PLACE_LAYERS.includes(f.layer.id));
+    if (placeFeature) {
+      const p = placeFeature.properties;
+      const name = p['name:ru'] || p.name || '';
+      const [lon, lat] = placeFeature.geometry.type === 'Point' ? placeFeature.geometry.coordinates : [e.lngLat.lng, e.lngLat.lat];
+      const same = search.nearby(lon, lat, { radius: 80, lang, limit: 30 })
+        .find((r) => normalize(r.title) === normalize(name) || normalize(r.title) === normalize(p.name || ''));
+      setSelection(null);
+      if (same) open(same);
+      else {
+        open({ kind: 'poi', title: name || t.building, type: '', subtitle: '', place: '', lon, lat,
+          category: p.class === 'aerodrome_label' ? 'airport' : '', info: null });
+      }
+      return;
+    }
+    const hit = features.find((f) => BUILDING_LAYERS.includes(f.layer.id));
+    const building = hit && pickPolygon(hit, [e.lngLat.lng, e.lngLat.lat]);
+    if (building) {
+      showBuilding(building, [e.lngLat.lng, e.lngLat.lat]);
+      return;
+    }
+    if (!card.classList.contains('yoobi-hidden')) close();
+  }
+
+  // Контур дома из дополнительных тайлов «по снимку» (слой site, kind=imagery), в котором центр дома.
+  function imageryOf(building) {
+    if (!map.getSource('extra')) return null;
+    const ring = building.geometry.coordinates[0];
+    if (!ring?.length) return null;
+    const c = ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
+    let found = null;
+    try {
+      for (const f of map.querySourceFeatures('extra', { sourceLayer: 'site', filter: ['==', ['get', 'kind'], 'imagery'] })) {
+        const polygons = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates || [];
+        if (polygons.some((p) => inRing(c, p[0]))) { found = f.properties; break; }
+      }
+    } catch { /* источника нет в этом стиле */ }
+    return found;
+  }
+
+  // Карточка дома: адрес как в справочниках, тип и этажность, организации внутри.
+  function showBuilding(building, [lon, lat]) {
+    current = () => showBuilding(building, [lon, lat]);
+    const found = search.inside(building.geometry, { lang });
+    const address = found.address;
+    const item = address || { kind: 'address', title: t.building, lon, lat };
+    // Адреса у дома нет — подскажем ближайший, как «рядом с домом 38» в справочниках.
+    const nearest = address ? null : search.reverse(lon, lat, { radius: 50, lang });
+    const nearby = nearest ? [nearest] : found.places.length ? [] : search.nearby(lon, lat, { radius: 40, lang, limit: 5 });
+    // У мечети высота зала в тайлах оценена по размеру (scripts/landmarks.py) — этажи не выдумываем.
+    const worship = found.places.some((p) => p.category === 'worship');
+    // Многоэтажный жилой дом без отмеченных подъездов: честно сказать и предложить отметить вход.
+    const levels = address?.info?.lv || floorsFromHeight(building.properties.render_height);
+    const flats = (address?.type || '').match(/жил|apart|хона/i) || levels >= 4;
+    const missing = !found.entrances.length && !worship && flats && levels >= 3
+      ? `<div class="yoobi-note">${esc(t.noEntrances)}${onReport ? `. ${esc(t.markEntrance)}` : ''}</div>` : '';
+    // Дом по снимку Sentinel-2 (scripts/imagery.py): честно сказать, что контур или этажность примерные.
+    const seen = imageryOf(building);
+    const approx = seen ? `<div class="yoobi-note">${esc((seen.what === 'tower' ? t.imageryTower : t.imageryLevels)(
+      String(seen.date || '').split('-').reverse().join('.')))}</div>` : '';
+    show({ item, title: address ? address.title : t.building, alt: address?.alt,
+      type: houseType(address, worship ? 0 : building.properties.render_height),
+      extra: houseFacts(address) + approx + missing,
+      entrances: found.entrances, inside: found.places, nearby, nearbyTitle: nearest ? t.nearest : t.nearby,
+      at: [lon, lat], marker: false });
+    setSelection(building, found.entrances);
+  }
+  const pointer = () => { map.getCanvas().style.cursor = 'pointer'; };
+  const reset = () => { map.getCanvas().style.cursor = ''; };
+  const hover = PLACE_LAYERS.filter((id) => map.getLayer(id));
+  if (clickable) {
+    map.on('click', onClick);
+    map.on('mouseenter', hover, pointer);
+    map.on('mouseleave', hover, reset);
+  }
+  const onKey = (e) => { if (e.key === 'Escape' && document.activeElement !== input) close(); };
+  document.addEventListener('keydown', onKey);
+
+  return {
+    open,
+    close,
+    input,
+    setLang(next) {
+      lang = next;
+      t = TEXT[lang] || TEXT.ru;
+      applyText();
+      if (input.value.trim()) run();
+      if (current && !card.classList.contains('yoobi-hidden')) current(); // карточка — на новом языке
+    },
+    destroy() {
+      map.off('move', placePin);
+      map.off('click', onClick);
+      map.off('mouseenter', hover, pointer);
+      map.off('mouseleave', hover, reset);
+      document.removeEventListener('keydown', onKey);
+      setSelection(null);
+      container.classList.remove('yoobi-has-panel');
+      panel.remove();
+      pin.remove();
+    },
+  };
+}
