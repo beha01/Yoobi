@@ -6,6 +6,8 @@
   python3 scripts/state.py pack dist/state      # data/ → файлы JSON для хранилища
   python3 scripts/state.py unpack папка|файлы…  # файлы из хранилища → data/
   python3 scripts/state.py list папка|файлы…    # какой файл к какому состоянию относится
+  python3 scripts/state.py stale папка|файлы…   # что можно удалить: всё, кроме самого свежего
+                                                # целого состояния и отчётов за неделю
 
 Каждый файл описывает себя сам (JSON: метка сборки, вид, номер части), поэтому имена
 файлов после скачивания из хранилища не важны. Рядом кладётся и код сборки (файлы папки map/
@@ -100,8 +102,8 @@ def pack(out, data=None):
 
 
 def read(paths):
-    """Файлы состояний: {метка: [(путь, документ)…]}; чужие файлы пропускаются."""
-    states = {}
+    """Файлы состояний: {метка: [(путь, документ)…]} и отчёты запусков [(путь, документ)…]."""
+    states, runs = {}, []
     for path in paths:
         try:
             with open(path, encoding='utf-8') as f:
@@ -110,20 +112,15 @@ def read(paths):
             continue
         if isinstance(doc, dict) and doc.get('yoobi_state'):
             states.setdefault(doc['yoobi_state'], []).append((path, doc))
-    return states
+        elif isinstance(doc, dict) and doc.get('yoobi_run'):
+            runs.append((path, doc))
+    return states, runs
 
 
-def listing(paths):
-    for stamp, docs in sorted(read(paths).items(), reverse=True):
-        for path, doc in sorted(docs, key=lambda d: d[0]):
-            print(f'{stamp}\t{doc["kind"]}\t{os.path.basename(path)}')
-
-
-def unpack(paths, data=None):
-    data = data or os.path.join(HERE, 'data')
-    states = {k: [d for _p, d in v] for k, v in read(paths).items()}
-    for stamp in sorted(states, reverse=True):  # самое свежее целое состояние
-        docs = states[stamp]
+def complete(states):
+    """Целые состояния от свежего к старому: (метка, документы, выгрузка OSM)."""
+    for stamp in sorted(states, reverse=True):
+        docs = [d for _p, d in states[stamp]]
         manifest = next((d for d in docs if d['kind'] == 'manifest'), None)
         osm = {d['index']: d for d in docs if d['kind'] == 'osm'}
         if not manifest or len(osm) != manifest['osm_parts']:
@@ -133,6 +130,34 @@ def unpack(paths, data=None):
         if sha(raw) != manifest['osm_sha256']:
             print(f'состояние {stamp}: контрольная сумма не совпала — пропускаю', file=sys.stderr)
             continue
+        yield stamp, docs, manifest, raw
+
+
+def listing(paths):
+    states, runs = read(paths)
+    for stamp, docs in sorted(states.items(), reverse=True):
+        for path, doc in sorted(docs, key=lambda d: d[0]):
+            print(f'{stamp}\t{doc["kind"]}\t{os.path.basename(path)}')
+    for path, doc in sorted(runs, key=lambda r: r[1]['yoobi_run'], reverse=True):
+        print(f'{doc["yoobi_run"]}\tотчёт: {doc.get("status")}\t{os.path.basename(path)}')
+
+
+def stale(paths, keep_days=7, now=None):
+    """Имена файлов (без .json — это id ассетов на складе), которые больше не нужны."""
+    states, runs = read(paths)
+    newest = next(complete(states), None)
+    keep = newest[0] if newest else None
+    old = [p for stamp, docs in states.items() if keep and stamp != keep for p, _d in docs]
+    now = now or dt.datetime.now(dt.timezone.utc)
+    limit = (now - dt.timedelta(days=keep_days)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    old += [p for p, d in runs if d['yoobi_run'] < limit]
+    return sorted(os.path.splitext(os.path.basename(p))[0] for p in old)
+
+
+def unpack(paths, data=None):
+    data = data or os.path.join(HERE, 'data')
+    states, _runs = read(paths)
+    for stamp, docs, manifest, raw in complete(states):  # самое свежее целое состояние
         pbf = os.path.join(data, 'sources', f'{AREA}.osm.pbf')
         os.makedirs(os.path.dirname(pbf), exist_ok=True)
         with open(pbf + '.tmp', 'wb') as f:
@@ -154,11 +179,14 @@ def unpack(paths, data=None):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3 or sys.argv[1] not in ('pack', 'unpack', 'list'):
+    if len(sys.argv) < 3 or sys.argv[1] not in ('pack', 'unpack', 'list', 'stale'):
         sys.exit(__doc__)
     if sys.argv[1] == 'pack':
         pack(sys.argv[2])
     else:
         paths = [p for a in sys.argv[2:] for p in (glob.glob(os.path.join(a, '**', '*'), recursive=True)
                                                    if os.path.isdir(a) else [a]) if os.path.isfile(p)]
-        (unpack if sys.argv[1] == 'unpack' else listing)(paths)
+        if sys.argv[1] == 'stale':
+            print('\n'.join(stale(paths)))
+        else:
+            (unpack if sys.argv[1] == 'unpack' else listing)(paths)

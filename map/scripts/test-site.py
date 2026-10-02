@@ -111,6 +111,24 @@ import base64, io, tarfile  # noqa: E401,E402
 code_docs = [d for d in (json.load(open(p)) for p in renamed) if d['kind'] == 'code']
 check('состояние: рядом код сборки', len(code_docs) == 1 and 'scripts/state.py' in
       tarfile.open(fileobj=io.BytesIO(base64.b64decode(code_docs[0]['data']))).getnames())
+# Что удалять со склада: старое состояние и старые отчёты; свежее целое и отчёты недели — нет.
+import datetime as dt  # noqa: E402
+os.utime(pbf, (1790100000, 1790100000))
+packed2 = os.path.join(tmp, 'state2')
+state.pack(packed2, data=data)
+for i, n in enumerate(sorted(os.listdir(packed2))):
+    os.rename(os.path.join(packed2, n), os.path.join(packed2, f'{i + 100:032x}.json'))
+now = dt.datetime(2026, 10, 2, 8, 0, tzinfo=dt.timezone.utc)
+runs = {'aaaa': '2026-10-01T22:00:00Z', 'bbbb': '2026-09-20T22:00:00Z'}
+for name, when in runs.items():
+    with open(os.path.join(packed2, name + '.json'), 'w') as f:
+        json.dump({'yoobi_run': when, 'status': 'ok', 'message': '', 'log': []}, f)
+both = renamed + [os.path.join(packed2, n) for n in os.listdir(packed2)]
+gone = state.stale(both, now=now)
+check('склад: удаляется прошлое состояние и отчёт старше недели',
+      set(gone) == {os.path.splitext(os.path.basename(p))[0] for p in renamed} | {'bbbb'})
+check('склад: без целого состояния прошлые не удаляются',
+      state.stale(renamed[:-1] + [os.path.join(packed2, 'bbbb.json')], now=now) == ['bbbb'])
 os.remove(renamed[-1])  # одной части нет — такое состояние не берётся
 try:
     state.unpack([p for p in renamed if os.path.exists(p)], data=os.path.join(tmp, 'data3'))
