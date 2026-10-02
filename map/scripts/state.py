@@ -8,7 +8,8 @@
   python3 scripts/state.py list папка|файлы…    # какой файл к какому состоянию относится
 
 Каждый файл описывает себя сам (JSON: метка сборки, вид, номер части), поэтому имена
-файлов после скачивания из хранилища не важны. Выгрузка OSM режется на части по 12 МБ в
+файлов после скачивания из хранилища не важны. Рядом кладётся и код сборки (файлы папки map/
+из git, tar.gz) — на случай, если запуск в облаке не сможет склонировать репозиторий. Выгрузка OSM режется на части по 12 МБ в
 base64; в manifest — время данных и контрольная сумма. Из нескольких сохранённых
 состояний берётся самое свежее целое.
 """
@@ -19,8 +20,11 @@ import glob
 import hashlib
 import json
 import os
+import io
 import shutil
+import subprocess
 import sys
+import tarfile
 
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 AREA = os.environ.get('AREA', 'tajikistan')
@@ -30,6 +34,30 @@ FILES = ['sources/imagery.geojson', f'{AREA}-mask.geojson', 'last-good.json']
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
+
+
+SKIP = {'node_modules', 'data', 'fonts', '__pycache__', 'dist', '.git'}  # как в .gitignore
+
+
+def code():
+    """Файлы папки map/ под git (как они лежат сейчас) одним tar.gz. Без git (код сам
+    восстановлен из хранилища) — все файлы папки, кроме данных и сборок."""
+    try:
+        out = subprocess.run(['git', 'ls-files', '-z'], cwd=HERE, capture_output=True, check=True).stdout
+        names = list(filter(None, out.decode().split('\0')))
+    except (OSError, subprocess.CalledProcessError):
+        names = []
+    if not names:
+        for d, dirs, fs in os.walk(HERE):
+            dirs[:] = [x for x in dirs if x not in SKIP]
+            names += [os.path.relpath(os.path.join(d, f), HERE) for f in fs]
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w:gz') as tar:
+        for name in sorted(names):
+            path = os.path.join(HERE, name)
+            if os.path.isfile(path):
+                tar.add(path, arcname=name)
+    return buf.getvalue()
 
 
 def pack(out, data=None):
@@ -59,10 +87,15 @@ def pack(out, data=None):
                 json.dump({'yoobi_state': stamp, 'kind': 'file', 'path': rel, 'mtime': os.path.getmtime(src),
                            'data': text}, g, ensure_ascii=False)
             files.append(rel)
+    bundle = code()
+    if bundle:
+        with open(os.path.join(out, f'yoobi-state-{stamp}-code.json'), 'w') as g:
+            json.dump({'yoobi_state': stamp, 'kind': 'code', 'data': base64.b64encode(bundle).decode()}, g)
     with open(os.path.join(out, f'yoobi-state-{stamp}-manifest.json'), 'w', encoding='utf-8') as f:
         json.dump({'yoobi_state': stamp, 'kind': 'manifest', 'osm_mtime': mtime, 'osm_sha256': sha(raw),
                    'osm_bytes': len(raw), 'osm_parts': len(parts), 'files': files}, f, ensure_ascii=False, indent=1)
-    print(f'{out}: состояние {stamp} — выгрузка OSM {len(raw) / 1e6:.1f} МБ в {len(parts)} частях, ещё {len(files)} файла')
+    print(f'{out}: состояние {stamp} — выгрузка OSM {len(raw) / 1e6:.1f} МБ в {len(parts)} частях, ещё {len(files)} файла'
+          + (f', код {len(bundle) / 1e3:.0f} КБ' if bundle else ''))
     return stamp
 
 

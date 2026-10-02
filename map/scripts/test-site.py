@@ -107,6 +107,10 @@ with open(pbf, 'rb') as a_, open(os.path.join(data2, 'sources', 'tajikistan.osm.
 check('состояние: выгрузка OSM та же и с тем же временем', same
       and os.path.getmtime(os.path.join(data2, 'sources', 'tajikistan.osm.pbf')) == 1790000000)
 check('состояние: образец проверки на месте', json.load(open(os.path.join(data2, 'last-good.json'))) == {'main_tiles': 1})
+import base64, io, tarfile  # noqa: E401,E402
+code_docs = [d for d in (json.load(open(p)) for p in renamed) if d['kind'] == 'code']
+check('состояние: рядом код сборки', len(code_docs) == 1 and 'scripts/state.py' in
+      tarfile.open(fileobj=io.BytesIO(base64.b64decode(code_docs[0]['data']))).getnames())
 os.remove(renamed[-1])  # одной части нет — такое состояние не берётся
 try:
     state.unpack([p for p in renamed if os.path.exists(p)], data=os.path.join(tmp, 'data3'))
