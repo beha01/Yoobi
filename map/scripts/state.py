@@ -5,6 +5,7 @@
 
   python3 scripts/state.py pack dist/state      # data/ → файлы JSON для хранилища
   python3 scripts/state.py unpack папка|файлы…  # файлы из хранилища → data/
+  python3 scripts/state.py list папка|файлы…    # какой файл к какому состоянию относится
 
 Каждый файл описывает себя сам (JSON: метка сборки, вид, номер части), поэтому имена
 файлов после скачивания из хранилища не важны. Выгрузка OSM режется на части по 12 МБ в
@@ -65,8 +66,8 @@ def pack(out, data=None):
     return stamp
 
 
-def unpack(paths, data=None):
-    data = data or os.path.join(HERE, 'data')
+def read(paths):
+    """Файлы состояний: {метка: [(путь, документ)…]}; чужие файлы пропускаются."""
     states = {}
     for path in paths:
         try:
@@ -75,7 +76,19 @@ def unpack(paths, data=None):
         except (OSError, ValueError, UnicodeDecodeError):
             continue
         if isinstance(doc, dict) and doc.get('yoobi_state'):
-            states.setdefault(doc['yoobi_state'], []).append(doc)
+            states.setdefault(doc['yoobi_state'], []).append((path, doc))
+    return states
+
+
+def listing(paths):
+    for stamp, docs in sorted(read(paths).items(), reverse=True):
+        for path, doc in sorted(docs, key=lambda d: d[0]):
+            print(f'{stamp}\t{doc["kind"]}\t{os.path.basename(path)}')
+
+
+def unpack(paths, data=None):
+    data = data or os.path.join(HERE, 'data')
+    states = {k: [d for _p, d in v] for k, v in read(paths).items()}
     for stamp in sorted(states, reverse=True):  # самое свежее целое состояние
         docs = states[stamp]
         manifest = next((d for d in docs if d['kind'] == 'manifest'), None)
@@ -108,10 +121,11 @@ def unpack(paths, data=None):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3 or sys.argv[1] not in ('pack', 'unpack'):
+    if len(sys.argv) < 3 or sys.argv[1] not in ('pack', 'unpack', 'list'):
         sys.exit(__doc__)
     if sys.argv[1] == 'pack':
         pack(sys.argv[2])
     else:
-        unpack([p for a in sys.argv[2:] for p in (glob.glob(os.path.join(a, '**', '*'), recursive=True)
-                                                  if os.path.isdir(a) else [a]) if os.path.isfile(p)])
+        paths = [p for a in sys.argv[2:] for p in (glob.glob(os.path.join(a, '**', '*'), recursive=True)
+                                                   if os.path.isdir(a) else [a]) if os.path.isfile(p)]
+        (unpack if sys.argv[1] == 'unpack' else listing)(paths)

@@ -11,7 +11,8 @@
 живая-страница.html — опубликованная сейчас страница (Artifact read сохраняет её файлом):
 по ней видно, какие части тайлов сейчас в ходу. --full — залить и неизменные файлы (рельеф,
 шрифты), например в новый артефакт. --live-bytes — сколько весит живая версия (сумма размеров
-из списка её файлов); без него — оценка по числу частей. Вывод — JSON: шаги с картой файлов {путь: файл|null}
+из списка её файлов); без него — оценка: старые части плюс все прочие файлы новой папки (рельеф,
+шрифты, поиск, код почти не меняются от сборки к сборке). Вывод — JSON: шаги с картой файлов {путь: файл|null}
 и какую страницу публиковать на каждом шаге (живую или новую).
 """
 
@@ -25,7 +26,7 @@ STEP = 58 * 1000 * 1000        # запас до 64 МБ за раз
 FINAL = 62 * 1000 * 1000
 FILES = 240
 PART_B64 = 1398104
-OTHER = 32 * 1000 * 1000       # рельеф, шрифты, поиск, код в живой версии
+SLACK = 4 * 1000 * 1000        # поиск и код в живой версии могут быть чуть больше новых
 STATIC = ('dem/', 'fonts/')
 
 
@@ -45,7 +46,11 @@ def main(site, live, full=False, live_bytes=None):
     size = {p: os.path.getsize(os.path.join(site, p)) for p in files}
     tiles = [p for p in files if p.startswith('tiles/')]
     rest = [p for p in files if not p.startswith('tiles/')]
-    live_bytes = live_bytes or sum(n for _p, n in old) * PART_B64 + OTHER
+    if not live_bytes:
+        other = sum(os.path.getsize(os.path.join(d, f)) for d, _dirs, fs in os.walk(site) for f in fs
+                    if not os.path.relpath(os.path.join(d, f), site).startswith('tiles' + os.sep)
+                    and f != 'publish-plan.json')
+        live_bytes = sum(n for _p, n in old) * PART_B64 + other + SLACK
     budget = max(0, LIMIT - live_bytes)
     steps, cur, cur_bytes, used = [], [], 0, 0
     queue = list(tiles)
