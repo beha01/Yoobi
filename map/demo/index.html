@@ -30,7 +30,7 @@
     import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs';
     import {
       createStyle, mapOptions, enableLockedCountries, setTheme, loadSearch, enableSearchPanel,
-      POI_LAYERS, describeFeature, SUBCLASS_RU, enableObjects3D, supportsObjects3D,
+      POI_LAYERS, describeFeature, SUBCLASS_RU, enableObjects3D, supportsObjects3D, enableRoofLabels,
     } from '../src/index.js';
 
     const q = new URLSearchParams(location.search);
@@ -74,6 +74,8 @@
     // Не вышло WebGL2 у самой карты — плоские кроны вместо объёмных, без перезагрузки тайлов.
     const flat = () => setTimeout(() => { styleOptions.trees3d = false; setTheme(map, theme, styleOptions); });
     if (styleOptions.trees3d) enableObjects3D(map, { trees: styleOptions.trees, onFail: flat });
+    // Номера домов на крышах, когда карта наклонена (WebGL2; без него — плоские номера).
+    if (supportsObjects3D()) enableRoofLabels(map);
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), 'top-right');

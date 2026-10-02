@@ -28,6 +28,7 @@ export { createSearch, loadSearch, normalize } from './search.js';
 export { enableSearchPanel, prettyHours } from './ui.js';
 export { OUTSIDE_MASK, NEIGHBORS } from './borders.js';
 export { enableObjects3D, supportsObjects3D, OBJECTS_3D_LAYER } from './objects3d.js';
+export { enableRoofLabels, ROOF_LABELS_LAYER } from './roof-labels.js';
 export { enableReports, memoryReports, reportsToGeoJSON } from './reports.js';
 
 // Адрес спрайта рядом с пакетом: <папка пакета>/sprites/yoobi.

@@ -231,7 +231,47 @@ function apply(m, x, y, z, w) {
 const mercX = (lng) => (lng + 180) / 360;
 const mercY = (lat) => (180 - (180 / Math.PI) * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))) / 360;
 
-function compile(gl, vs, fs) {
+/** Начало местных координат у центра карты: x — на восток, y — на север, в метрах. */
+export function localOrigin(map) {
+  const center = map.getCenter();
+  const k = EARTH * Math.cos((center.lat * Math.PI) / 180); // метров в единице меркатора у центра
+  return { ox: mercX(center.lng), oy: mercY(center.lat), k };
+}
+
+/** Точка lon/lat в местных метрах от начала origin. */
+export function toLocal(origin, lng, lat) {
+  return [(mercX(lng) - origin.ox) * origin.k, (origin.oy - mercY(lat)) * origin.k];
+}
+
+/**
+ * Кадр для пользовательского слоя: матрица из местных метров (x — восток, y — север, z — высота)
+ * в экран, положение камеры и «вверх» экрана в тех же метрах. null — рисовать нельзя (глобус).
+ */
+export function localFrame(map, args, origin) {
+  const vp = args.modelViewProjectionMatrix;
+  if (!vp || !origin || map.getProjection?.()?.type === 'globe') return null;
+  const { ox, oy, k } = origin;
+  const world = 512 * 2 ** map.getZoom();
+  const s = world / k;
+  const m = new Float64Array(16);
+  for (let r = 0; r < 4; r++) {
+    m[r] = vp[r] * s;
+    m[4 + r] = -vp[4 + r] * s;
+    m[8 + r] = vp[8 + r];
+    m[12 + r] = vp[r] * ox * world + vp[4 + r] * oy * world + vp[12 + r];
+  }
+  const inv = invert(m);
+  if (!inv) return null;
+  const eye = apply(inv, 0, 0, 1, 0);
+  if (!eye[3]) return null;
+  const camera = [eye[0] / eye[3], eye[1] / eye[3], eye[2] / eye[3]];
+  const p0 = apply(inv, 0, 0, 0, 1);
+  const p1 = apply(inv, 0, 1, 0, 1);
+  const up = [p1[0] / p1[3] - p0[0] / p0[3], p1[1] / p1[3] - p0[1] / p0[3], p1[2] / p1[3] - p0[2] / p0[3]];
+  return { m, matrix: new Float32Array(m), camera, up };
+}
+
+export function compile(gl, vs, fs) {
   const shader = (type, src) => {
     const s = gl.createShader(type);
     gl.shaderSource(s, src);
@@ -385,11 +425,7 @@ class Objects3DLayer {
     } catch {
       return;
     }
-    const center = map.getCenter();
-    const cos = Math.cos((center.lat * Math.PI) / 180);
-    const ox = mercX(center.lng);
-    const oy = mercY(center.lat);
-    const k = EARTH * cos; // метров в единице меркатора у центра
+    const { ox, oy, k } = localOrigin(map);
     const terrain = map.getTerrain?.() ? map : null;
     const lift = terrain ? (map.transform?.elevation || 0) : 0;
     const data = new Float32Array(Math.min(trees.length + objects.length, MAX_INSTANCES) * STRIDE);
@@ -443,29 +479,10 @@ class Objects3DLayer {
     if (this.failed || !this.visible || !this.count || !this.origin) return;
     const zoom = this.map.getZoom();
     if (zoom < MINZOOM) return;
-    const vp = args.modelViewProjectionMatrix;
-    if (!vp || this.map.getProjection?.()?.type === 'globe') return;
-    // Матрица из местных метров (x — восток, y — север, z — высота) в экран.
-    const { ox, oy, k } = this.origin;
-    const world = 512 * 2 ** zoom;
-    const s = world / k;
-    const m = new Float64Array(16);
-    for (let r = 0; r < 4; r++) {
-      m[r] = vp[r] * s;
-      m[4 + r] = -vp[4 + r] * s;
-      m[8 + r] = vp[8 + r];
-      m[12 + r] = vp[r] * ox * world + vp[4 + r] * oy * world + vp[12 + r];
-    }
-    const inv = invert(m);
-    if (!inv) return;
-    const eye = apply(inv, 0, 0, 1, 0);
-    if (!eye[3]) return;
-    const camera = [eye[0] / eye[3], eye[1] / eye[3], eye[2] / eye[3]];
-    const p0 = apply(inv, 0, 0, 0, 1);
-    const p1 = apply(inv, 0, 1, 0, 1);
-    const up = [p1[0] / p1[3] - p0[0] / p0[3], p1[1] / p1[3] - p0[1] / p0[3], p1[2] / p1[3] - p0[2] / p0[3]];
+    const frame = localFrame(this.map, args, this.origin);
+    if (!frame) return;
+    const { matrix, camera, up } = frame;
     const ul = Math.hypot(...up) || 1;
-    const matrix = new Float32Array(m);
     const light = this.lightDirection();
     const grow = Math.min(1, Math.max(0, (zoom - MINZOOM) / 0.6));
     const palette = PACKED[this.map.getContainer().dataset.yoobiTheme === 'dark' ? 'dark' : 'light'];
