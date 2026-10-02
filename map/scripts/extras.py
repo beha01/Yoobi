@@ -1462,7 +1462,7 @@ def data_dates(src, overture_path=None):
     header = reader.header()
     reader.close()
     stamp = header.get('osmosis_replication_timestamp') or header.get('timestamp') or ''
-    dates = {'osm': stamp[:10]} if stamp else {}
+    dates = {'osm': stamp[:10], 'osm_time': stamp} if stamp else {}
     try:
         with open(f'{overture_path}.release', encoding='utf-8') as f:
             dates['overture'] = f.read().strip()[:10]

@@ -80,7 +80,9 @@ fetch_osm() {
   local url=$1 tmp="$PBF.tmp" since=()
   [[ -s "$PBF" ]] && since=(-z "$PBF")
   rm -f "$tmp"
-  curl -fL --retry 3 --retry-all-errors --connect-timeout 20 -R ${since[@]+"${since[@]}"} -o "$tmp" "$url" || { rm -f "$tmp"; return 1; }
+  # Зависшая загрузка (прокси молчит) обрывается: меньше 1 КБ/с минуту — повтор, потом отказ.
+  curl -fL --retry 3 --retry-all-errors --connect-timeout 20 --speed-limit 1024 --speed-time 60 -R \
+    ${since[@]+"${since[@]}"} -o "$tmp" "$url" || { rm -f "$tmp"; return 1; }
   if [[ ! -s "$tmp" ]]; then
     rm -f "$tmp"
     echo "Выгрузка OSM не изменилась с прошлой сборки: $PBF"
@@ -98,11 +100,29 @@ fetch_osm() {
   mv "$tmp" "$PBF"
 }
 
-if [[ -n "${OSM_URL:-}" ]]; then
-  fetch_osm "$OSM_URL"
-elif ! fetch_osm "https://download.geofabrik.de/$GEOFABRIK_PATH-latest.osm.pbf"; then
+fetched=0
+# Своя выгрузка моложе недели (время данных — время файла, его ставит update-osm.py):
+# Geofabrik не нужен, правки докачаются с planet.openstreetmap.org. OSM_REFRESH_DAYS=0 — качать всегда.
+age_days() { echo $(( ( $(date +%s) - $(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1") ) / 86400 )); }
+if [[ -z "${OSM_URL:-}" && -s "$PBF" && $(age_days "$PBF") -lt "${OSM_REFRESH_DAYS:-7}" ]]; then
+  echo "Выгрузка $PBF свежая ($(age_days "$PBF") дн.) — докачиваю только правки OSM"
+  fetched=1
+elif [[ -n "${OSM_URL:-}" ]]; then
+  fetch_osm "$OSM_URL" && fetched=1
+elif fetch_osm "https://download.geofabrik.de/$GEOFABRIK_PATH-latest.osm.pbf"; then
+  fetched=1
+else
   echo "HTTPS до Geofabrik недоступен, пробую HTTP с проверкой MD5" >&2
-  fetch_osm "http://download.geofabrik.de/$GEOFABRIK_PATH-latest.osm.pbf"
+  fetch_osm "http://download.geofabrik.de/$GEOFABRIK_PATH-latest.osm.pbf" && fetched=1
+fi
+# Источник недоступен, но выгрузка с прошлой сборки есть: её докачает до минуты update-osm.py ниже.
+if [[ $fetched == 0 ]]; then
+  if [[ -s "$PBF" ]]; then
+    echo "Новую выгрузку скачать не удалось — беру прошлую ($PBF) и докачиваю правки OSM" >&2
+  else
+    echo "Выгрузку OSM скачать не удалось, а прошлой нет" >&2
+    exit 1
+  fi
 fi
 
 # 2. Объёмные деревья, подъезды со стороной входа, городские детали, индекс поиска,
@@ -142,14 +162,24 @@ fi
 # этажность по тени и старые дома, на месте которых стоит новое. Сравниваются последние ясные
 # дни с той же осенью 2017 года; снимки кешируются в data/sources/imagery-cache. Нужен контур
 # страны с прошлого прогона extras.py. IMAGERY=0 — без снимков (берётся прошлый результат).
-if [[ "${IMAGERY:-1}" == 1 && -f "data/$AREA-mask.geojson" ]]; then
+run_imagery() {
+  [[ "${IMAGERY:-1}" == 1 && -f "data/$AREA-mask.geojson" ]] || return 1
+  # Снимки Sentinel-2 выходят раз в 2–5 дней, высотки растут месяцами: свежий результат не пересчитываем.
+  if [[ -s data/sources/imagery.geojson && $(age_days data/sources/imagery.geojson) -lt "${IMAGERY_DAYS:-5}" ]]; then
+    echo "Перемены по снимкам — с прошлого расчёта ($(age_days data/sources/imagery.geojson) дн.)"
+    return 0
+  fi
   if ! data/.venv/bin/python -c 'import numpy, scipy, rasterio' 2>/dev/null; then
     [[ -d data/.venv ]] || python3 -m venv data/.venv
     data/.venv/bin/pip install --quiet 'osmium>=4' numpy scipy rasterio pillow
   fi
-  data/.venv/bin/python scripts/imagery.py data/sources/imagery.geojson --osm="$PBF" --mask="data/$AREA-mask.geojson" ||
-    echo "Снимки Sentinel-2 недоступны — перемены по снимкам с прошлой сборки" >&2
-fi
+  if data/.venv/bin/python scripts/imagery.py data/sources/imagery.geojson --osm="$PBF" --mask="data/$AREA-mask.geojson"; then
+    return 0
+  fi
+  echo "Снимки Sentinel-2 недоступны — перемены по снимкам с прошлой сборки" >&2
+  return 1
+}
+[[ -f "data/$AREA-mask.geojson" ]] && { run_imagery || true; }
 # Организации Overture Maps: из мировой базы читаются только куски, покрывающие страну
 # (~50 МБ). Если сеть до S3 недоступна, сборка продолжается без них.
 OVERTURE_ARGS=()
@@ -192,8 +222,12 @@ had_mask=0
 [[ -f "data/$AREA-mask.geojson" ]] && had_mask=1
 [[ $had_mask == 1 ]] && fetch_buildings || true
 run_extras
-if [[ $had_mask == 0 ]] && fetch_buildings; then
-  run_extras
+# Первый запуск: контура страны ещё не было — новые здания и снимки только теперь, и ещё проход.
+if [[ $had_mask == 0 ]]; then
+  again=0
+  fetch_buildings && again=1
+  run_imagery && again=1
+  [[ $again == 1 ]] && run_extras
 fi
 
 # 3. Основные тайлы — из копии без подписей соседей, поэтому стиль рисует подписи

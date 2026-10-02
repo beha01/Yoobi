@@ -21,6 +21,10 @@ on:
       - 'map/scripts/update-osm.py'
       - 'map/scripts/imagery.py'
       - 'map/scripts/cleanup.py'
+      - 'map/scripts/package-site.py'
+      - 'map/scripts/check-build.py'
+      - 'map/scripts/daily-update.sh'
+      - 'map/site/**'
       - 'map/tiles/**'
       - '.github/workflows/map-data.yml'
 

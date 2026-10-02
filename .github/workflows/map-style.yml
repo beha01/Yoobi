@@ -26,9 +26,10 @@ jobs:
           npm ci
           npm run build
           npm test
-          python3 -m py_compile scripts/extras.py scripts/places.py scripts/overture.py scripts/landmarks.py scripts/corrections.py scripts/update-osm.py scripts/notes.py scripts/reports.py scripts/brands.py scripts/imagery.py scripts/cleanup.py
+          python3 -m py_compile scripts/extras.py scripts/places.py scripts/overture.py scripts/landmarks.py scripts/corrections.py scripts/update-osm.py scripts/notes.py scripts/reports.py scripts/brands.py scripts/imagery.py scripts/cleanup.py scripts/package-site.py scripts/check-build.py scripts/publish-steps.py scripts/state.py
           python3 scripts/test-landmarks.py
           python3 scripts/test-places.py
+          python3 scripts/test-site.py
           python3 -m venv /tmp/venv && /tmp/venv/bin/pip install --quiet "osmium>=4" numpy scipy && /tmp/venv/bin/python scripts/test-fixes.py
           /tmp/venv/bin/python scripts/test-imagery.py
           git diff --exit-code -- styles sprites/yoobi.json sprites/yoobi@2x.json sprites/yoobi-dark.json sprites/yoobi-dark@2x.json
